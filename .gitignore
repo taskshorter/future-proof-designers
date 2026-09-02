@@ -1,8 +1,38 @@
+# dependencies
 node_modules/
-build/
+
+# builds
+.next/
+out/
 dist/
+build/
 coverage/
-.DS_Store
-*.log
-.env*
+*.tsbuildinfo
+
+# environment
+.env
+.env.local
+.env.*.local
 !.env.example
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# logs
+*.log
+logs/
+
+# temporary runtime data
+tmp/
+.cache/
+
+# credentials
+*.pem
+*.key
+credentials/
+secrets/
+
+# Vercel local link metadata (do not commit)
+.vercel/
