@@ -1,20 +1,57 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# FPDesigner
 
-# Run and deploy your AI Studio app
+Next.js App Router application foundation for FPDesigner v2.
 
-This contains everything you need to run your app locally.
+## Scope
 
-View your app in AI Studio: https://ai.studio/apps/cf61aba0-342b-480f-8368-c1b4b03ce935
+**B1-P0 = foundation only.**
 
-## Run Locally
+Included:
 
-**Prerequisites:**  Node.js
+- Next.js App Router + TypeScript
+- accessible application shell and public route structure
+- lint / typecheck / tests / production build
+- CI workflow
+- generic typed environment validation (`APP_ENV` / `NEXT_PUBLIC_APP_ENV`)
 
+Not included (B1-P1 and later):
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- Supabase Auth / sessions
+- customer-gateway integration
+- project creation / membership
+- pricing / payments
+- final brand design system
+
+## Requirements
+
+- Node.js 24+ (see `.nvmrc`)
+- npm
+
+## Setup
+
+```bash
+cp .env.example .env.local
+npm install
+```
+
+## Scripts
+
+```bash
+npm run dev        # local development server
+npm run lint       # ESLint
+npm run typecheck  # TypeScript
+npm test           # Vitest
+npm run build      # production build
+npm run verify     # lint + typecheck + test + build
+```
+
+## Environment
+
+See `.env.example`.
+
+B1-P0 requires only:
+
+- `APP_ENV` — `local` | `preview` | `production`
+- `NEXT_PUBLIC_APP_ENV` — must match `APP_ENV` when set
+
+No secrets are required for foundation development.
