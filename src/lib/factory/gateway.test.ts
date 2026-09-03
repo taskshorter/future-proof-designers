@@ -65,6 +65,37 @@ describe("Factory gateway client", () => {
     }
   });
 
+  it("maps all frozen error categories safely", async () => {
+    const categories = [
+      "not_found",
+      "permission_denied",
+      "invalid_input",
+    ] as const;
+
+    for (const category of categories) {
+      const fetchImpl = mockFetch(
+        new Response(
+          JSON.stringify({ ok: false, error: { category, message: "Hidden" } }),
+          { status: category === "not_found" ? 404 : category === "permission_denied" ? 403 : 400 },
+        ),
+      );
+
+      const result = await getProjectResumeDetail(
+        "00000000-0000-4000-8000-000000000013",
+        {
+          fetchImpl,
+          getAccessToken: async () => "access-token",
+          getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.category).toBe(category);
+      }
+    }
+  });
+
   it("maps auth, stale, temporary, and malformed responses safely", async () => {
     const cases = [
       [{ category: "auth_required", message: "Auth" }, 401],

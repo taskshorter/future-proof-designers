@@ -5,8 +5,9 @@ import {
   loadOrCreateDraft,
   readPreAccountDraft,
   saveDraftAnswers,
+  writePreAccountDraft,
 } from "./storage";
-import { DRAFT_STORAGE_KEY } from "./schema";
+import { createDraft, DRAFT_STORAGE_KEY } from "./schema";
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>();
@@ -45,6 +46,31 @@ describe("pre-account draft storage", () => {
   });
 
   it("clears draft only when explicitly cleared", () => {
+    const storage = createMemoryStorage();
+    loadOrCreateDraft(storage);
+    clearPreAccountDraft(storage);
+    expect(readPreAccountDraft(storage)).toBeNull();
+  });
+
+  it("preserves operationId across failed submission semantics", () => {
+    const storage = createMemoryStorage();
+    const draft = loadOrCreateDraft(storage);
+    const operationId = draft.operationId;
+
+    const stillThere = readPreAccountDraft(storage);
+    expect(stillThere?.operationId).toBe(operationId);
+  });
+
+  it("does not rotate operationId after stale conflict handling at storage layer", () => {
+    const storage = createMemoryStorage();
+    const draft = createDraft();
+    writePreAccountDraft(draft, storage);
+    saveDraftAnswers({ thirdAnswer: "Updated goal" }, storage);
+
+    expect(readPreAccountDraft(storage)?.operationId).toBe(draft.operationId);
+  });
+
+  it("clears draft after explicit clear following a successful browser confirmation flow", () => {
     const storage = createMemoryStorage();
     loadOrCreateDraft(storage);
     clearPreAccountDraft(storage);

@@ -26,6 +26,11 @@ export function AuthForm({ action, submitLabel, nextPath }: AuthFormProps) {
       </label>
       {state.error ? <p className="form-error">{state.error}</p> : null}
       {state.success ? <p className="form-success">{state.success}</p> : null}
+      {state.success && state.signInPath ? (
+        <p>
+          <a href={state.signInPath}>Sign in to continue</a>
+        </p>
+      ) : null}
       <button type="submit" disabled={pending}>
         {pending ? "Working…" : submitLabel}
       </button>

@@ -72,3 +72,9 @@ npm run verify
 Optional public business links (Instagram/Yelp/etc.) are intentionally not collected
 in B1-P1 because the frozen B1-F first-three-answer contract does not persist them.
 They remain deferred to the later onboarding/import contract.
+
+When a Person belongs to multiple Customers, the frozen B1-F contract may require
+`targetCustomerId` on project start but does not expose a structured subtype for that
+case inside `invalid_input` responses. FPDesigner therefore maps all `invalid_input`
+results generically and cannot reliably distinguish multi-Customer account selection
+from other invalid requests without a future structured Factory signal.

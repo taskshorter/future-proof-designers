@@ -3,11 +3,16 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import {
+  buildSignInPath,
+  sanitizeInternalReturnPath,
+} from "@/lib/auth/safe-return-path";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type AuthActionState = {
   error?: string;
   success?: string;
+  signInPath?: string;
 };
 
 export async function signUpAction(
@@ -16,6 +21,7 @@ export async function signUpAction(
 ): Promise<AuthActionState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const nextPath = sanitizeInternalReturnPath(formData.get("next"));
 
   if (!email || !password) {
     return { error: "Email and password are required." };
@@ -30,12 +36,13 @@ export async function signUpAction(
 
   if (data.session) {
     revalidatePath("/portal");
-    redirect("/portal");
+    redirect(nextPath);
   }
 
   return {
     success:
       "Account created. Check your email to confirm your address, then sign in to continue.",
+    signInPath: buildSignInPath(nextPath),
   };
 }
 
@@ -45,7 +52,7 @@ export async function signInAction(
 ): Promise<AuthActionState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  const nextPath = String(formData.get("next") ?? "/portal");
+  const nextPath = sanitizeInternalReturnPath(formData.get("next"));
 
   if (!email || !password) {
     return { error: "Email and password are required." };
@@ -59,7 +66,7 @@ export async function signInAction(
   }
 
   revalidatePath("/portal");
-  redirect(nextPath.startsWith("/") ? nextPath : "/portal");
+  redirect(nextPath);
 }
 
 export async function signOutAction(): Promise<void> {

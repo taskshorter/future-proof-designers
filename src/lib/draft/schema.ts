@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export const DRAFT_SCHEMA_VERSION = 1 as const;
 export const DRAFT_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const DRAFT_STORAGE_KEY = "fpdesigner.preAccountDraft.v1";
@@ -23,6 +25,27 @@ export const EMPTY_DRAFT_ANSWERS: PreAccountDraftAnswers = {
   businessDescription: "",
   thirdAnswer: "",
 };
+
+const isoTimestampSchema = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "Invalid timestamp",
+  });
+
+export const preAccountDraftAnswersSchema = z.object({
+  hasExistingWebsite: z.union([z.boolean(), z.null()]),
+  existingWebsiteUrl: z.union([z.string(), z.null()]),
+  businessDescription: z.string(),
+  thirdAnswer: z.string(),
+});
+
+export const preAccountDraftSchema = z.object({
+  schemaVersion: z.literal(DRAFT_SCHEMA_VERSION),
+  operationId: z.string().uuid(),
+  createdAt: isoTimestampSchema,
+  expiresAt: isoTimestampSchema,
+  answers: preAccountDraftAnswersSchema,
+});
 
 const FORBIDDEN_DRAFT_KEYS = new Set([
   "accessToken",
@@ -107,39 +130,22 @@ export function getThirdQuestionLabel(hasExistingWebsite: boolean | null): strin
 }
 
 export function parseStoredDraft(raw: unknown, now = Date.now()): PreAccountDraft | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-
-  const candidate = raw as Partial<PreAccountDraft>;
-
-  if (candidate.schemaVersion !== DRAFT_SCHEMA_VERSION) {
-    return null;
-  }
-
-  if (
-    typeof candidate.operationId !== "string" ||
-    typeof candidate.createdAt !== "string" ||
-    typeof candidate.expiresAt !== "string" ||
-    !candidate.answers ||
-    typeof candidate.answers !== "object"
-  ) {
-    return null;
-  }
-
   try {
-    assertDraftHasNoForbiddenFields(candidate);
+    assertDraftHasNoForbiddenFields(raw);
   } catch {
     return null;
   }
 
-  const draft = candidate as PreAccountDraft;
-
-  if (isDraftExpired(draft, now)) {
+  const parsed = preAccountDraftSchema.safeParse(raw);
+  if (!parsed.success) {
     return null;
   }
 
-  return draft;
+  if (isDraftExpired(parsed.data, now)) {
+    return null;
+  }
+
+  return parsed.data;
 }
 
 export function updateDraftAnswers(

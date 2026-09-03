@@ -8,6 +8,19 @@ import {
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
+const draftListeners = new Set<() => void>();
+
+export function subscribePreAccountDraft(listener: () => void): () => void {
+  draftListeners.add(listener);
+  return () => {
+    draftListeners.delete(listener);
+  };
+}
+
+function notifyDraftListeners(): void {
+  draftListeners.forEach((listener) => listener());
+}
+
 function getStorage(storage?: StorageLike): StorageLike | null {
   if (storage) {
     return storage;
@@ -49,12 +62,14 @@ export function writePreAccountDraft(
   }
 
   target.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  notifyDraftListeners();
   return draft;
 }
 
 export function clearPreAccountDraft(storage?: StorageLike): void {
   const target = getStorage(storage);
   target?.removeItem(DRAFT_STORAGE_KEY);
+  notifyDraftListeners();
 }
 
 export function loadOrCreateDraft(storage?: StorageLike): PreAccountDraft {

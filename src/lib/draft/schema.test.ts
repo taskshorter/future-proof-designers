@@ -10,6 +10,25 @@ import {
   validateDraftAnswersForSubmit,
 } from "./schema";
 
+const VALID_OPERATION_ID = "00000000-0000-4000-8000-000000000001";
+
+function buildDraft(overrides: Record<string, unknown> = {}) {
+  const now = Date.now();
+  return {
+    schemaVersion: 1,
+    operationId: VALID_OPERATION_ID,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + DRAFT_RETENTION_MS).toISOString(),
+    answers: {
+      hasExistingWebsite: false,
+      existingWebsiteUrl: null,
+      businessDescription: "test",
+      thirdAnswer: "goal",
+    },
+    ...overrides,
+  };
+}
+
 describe("pre-account draft schema", () => {
   it("creates a draft once with stable operationId until explicitly recreated", () => {
     const draft = createDraft(1_000);
@@ -26,13 +45,10 @@ describe("pre-account draft schema", () => {
   });
 
   it("ignores unknown schema versions and forbidden fields", () => {
-    expect(parseStoredDraft({ schemaVersion: 99, operationId: "x" })).toBeNull();
+    expect(parseStoredDraft({ schemaVersion: 99, operationId: VALID_OPERATION_ID })).toBeNull();
     expect(
       parseStoredDraft({
-        schemaVersion: 1,
-        operationId: "00000000-0000-4000-8000-000000000001",
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 1000).toISOString(),
+        ...buildDraft(),
         answers: {
           hasExistingWebsite: false,
           existingWebsiteUrl: null,
@@ -40,6 +56,34 @@ describe("pre-account draft schema", () => {
           thirdAnswer: "goal",
           accessToken: "secret",
         },
+      }),
+    ).toBeNull();
+  });
+
+  it("discards malformed nested answer types and invalid timestamps", () => {
+    expect(
+      parseStoredDraft({
+        ...buildDraft(),
+        answers: {
+          hasExistingWebsite: "yes",
+          existingWebsiteUrl: null,
+          businessDescription: "test",
+          thirdAnswer: "goal",
+        },
+      }),
+    ).toBeNull();
+
+    expect(
+      parseStoredDraft({
+        ...buildDraft(),
+        createdAt: "not-a-date",
+      }),
+    ).toBeNull();
+
+    expect(
+      parseStoredDraft({
+        ...buildDraft(),
+        operationId: "not-a-uuid",
       }),
     ).toBeNull();
   });

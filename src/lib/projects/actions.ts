@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 
+import { buildSignInPath } from "@/lib/auth/safe-return-path";
 import type { PreAccountDraftAnswers } from "@/lib/draft/schema";
 import { validateDraftAnswersForSubmit } from "@/lib/draft/schema";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@/lib/factory/gateway";
 import {
   mapFactoryCategoryToUserMessage,
+  type FactoryErrorCategory,
   type ProjectResumeDetail,
   type ProjectResumeSummary,
 } from "@/lib/factory/contract";
@@ -26,16 +28,7 @@ export type ProjectActionResult =
     }
   | {
       ok: false;
-      category:
-        | "auth_required"
-        | "session_expired"
-        | "not_found"
-        | "permission_denied"
-        | "invalid_input"
-        | "stale_or_conflicting"
-        | "temporary_failure"
-        | "internal_error"
-        | "account_selection_required";
+      category: FactoryErrorCategory;
       message: string;
     };
 
@@ -44,6 +37,21 @@ export type PortalResumeState = {
   projects: ProjectResumeSummary[];
   errorMessage?: string;
 };
+
+export type ProjectDetailLoadResult =
+  | { status: "success"; data: ProjectResumeDetail }
+  | { status: "reauth"; message: string; signInPath: string }
+  | { status: "not_found" }
+  | {
+      status: "error";
+      category:
+        | "permission_denied"
+        | "temporary_failure"
+        | "internal_error"
+        | "invalid_input"
+        | "stale_or_conflicting";
+      message: string;
+    };
 
 function toProjectAnswers(answers: PreAccountDraftAnswers) {
   return {
@@ -89,18 +97,6 @@ export async function submitProjectStartAction(input: {
   );
 
   if (!result.ok) {
-    if (
-      result.category === "invalid_input" &&
-      result.message.toLowerCase().includes("target")
-    ) {
-      return {
-        ok: false,
-        category: "account_selection_required",
-        message:
-          "Account selection is required before saving this project. Choose an authorized account and try again.",
-      };
-    }
-
     return {
       ok: false,
       category: result.category,
@@ -140,16 +136,34 @@ export async function loadPortalResumeState(): Promise<PortalResumeState> {
 
 export async function loadProjectResumeDetail(
   projectId: string,
-): Promise<ProjectResumeDetail | null> {
+): Promise<ProjectDetailLoadResult> {
   const accessToken = await getVerifiedAccessToken();
+  const returnPath = `/portal/projects/${encodeURIComponent(projectId)}`;
+
   if (!accessToken) {
-    redirect("/sign-in?next=/portal");
+    redirect(buildSignInPath(returnPath));
   }
 
   const result = await getProjectResumeDetail(projectId, await gatewayDeps());
-  if (!result.ok) {
-    return null;
+  if (result.ok) {
+    return { status: "success", data: result.data };
   }
 
-  return result.data;
+  if (result.category === "auth_required" || result.category === "session_expired") {
+    return {
+      status: "reauth",
+      message: mapFactoryCategoryToUserMessage(result.category),
+      signInPath: buildSignInPath(returnPath),
+    };
+  }
+
+  if (result.category === "not_found") {
+    return { status: "not_found" };
+  }
+
+  return {
+    status: "error",
+    category: result.category,
+    message: mapFactoryCategoryToUserMessage(result.category),
+  };
 }

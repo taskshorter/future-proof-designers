@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { loadProjectResumeDetail } from "@/lib/projects/actions";
 
@@ -16,11 +16,27 @@ type ProjectDetailPageProps = {
 
 export default async function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const { projectId } = await params;
-  const detail = await loadProjectResumeDetail(projectId);
+  const result = await loadProjectResumeDetail(projectId);
 
-  if (!detail) {
+  if (result.status === "reauth") {
+    redirect(result.signInPath);
+  }
+
+  if (result.status === "not_found") {
     notFound();
   }
+
+  if (result.status === "error") {
+    return (
+      <div className="page-stack">
+        <h1>Project unavailable</h1>
+        <p className="form-error">{result.message}</p>
+        <Link href="/portal">Back to projects</Link>
+      </div>
+    );
+  }
+
+  const detail = result.data;
 
   return (
     <div className="page-stack">

@@ -2,10 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useSyncExternalStore, useMemo, useState } from "react";
 
-import { clearPreAccountDraft, loadOrCreateDraft } from "@/lib/draft/storage";
-import { validateDraftAnswersForSubmit } from "@/lib/draft/schema";
+import {
+  clearPreAccountDraft,
+  readPreAccountDraft,
+  subscribePreAccountDraft,
+} from "@/lib/draft/storage";
+import {
+  parseStoredDraft,
+  validateDraftAnswersForSubmit,
+} from "@/lib/draft/schema";
+import { DRAFT_STORAGE_KEY } from "@/lib/draft/schema";
 import type { ProjectResumeSummary } from "@/lib/factory/contract";
 import { submitProjectStartAction } from "@/lib/projects/actions";
 
@@ -14,14 +22,58 @@ type PortalResumePanelProps = {
   errorMessage?: string;
 };
 
+function getDraftSnapshot(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(DRAFT_STORAGE_KEY);
+}
+
+function usePreAccountDraft() {
+  const draftRaw = useSyncExternalStore(
+    subscribePreAccountDraft,
+    getDraftSnapshot,
+    () => null,
+  );
+
+  return useMemo(() => {
+    if (!draftRaw) {
+      return null;
+    }
+
+    try {
+      return parseStoredDraft(JSON.parse(draftRaw));
+    } catch {
+      return null;
+    }
+  }, [draftRaw]);
+}
+
+function useClientHydrated() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
+
 export function PortalResumePanel({ projects, errorMessage }: PortalResumePanelProps) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(errorMessage ?? null);
   const [submitting, setSubmitting] = useState(false);
+  const draft = usePreAccountDraft();
+  const hydrated = useClientHydrated();
 
   async function continueDraft() {
-    const draft = loadOrCreateDraft();
-    const validationError = validateDraftAnswersForSubmit(draft.answers);
+    const existing = readPreAccountDraft();
+    if (!existing) {
+      setMessage("Your saved request is no longer available. Start again.");
+      router.push("/start");
+      return;
+    }
+
+    const validationError = validateDraftAnswersForSubmit(existing.answers);
     if (validationError) {
       setMessage(validationError);
       router.push("/start");
@@ -30,8 +82,8 @@ export function PortalResumePanel({ projects, errorMessage }: PortalResumePanelP
 
     setSubmitting(true);
     const result = await submitProjectStartAction({
-      operationId: draft.operationId,
-      answers: draft.answers,
+      operationId: existing.operationId,
+      answers: existing.answers,
     });
     setSubmitting(false);
 
@@ -45,9 +97,10 @@ export function PortalResumePanel({ projects, errorMessage }: PortalResumePanelP
   }
 
   if (projects.length === 0) {
-    const draft = typeof window !== "undefined" ? loadOrCreateDraft() : null;
     const hasCompleteDraft =
-      draft && validateDraftAnswersForSubmit(draft.answers) === null;
+      hydrated && draft !== null && validateDraftAnswersForSubmit(draft.answers) === null;
+    const hasIncompleteDraft =
+      hydrated && draft !== null && validateDraftAnswersForSubmit(draft.answers) !== null;
 
     return (
       <section className="panel">
@@ -59,6 +112,14 @@ export function PortalResumePanel({ projects, errorMessage }: PortalResumePanelP
             <button type="button" disabled={submitting} onClick={() => void continueDraft()}>
               {submitting ? "Saving…" : "Continue saved request"}
             </button>
+          </>
+        ) : hasIncompleteDraft ? (
+          <>
+            <p>You have an in-progress website request in this browser.</p>
+            {message ? <p className="form-error">{message}</p> : null}
+            <Link href="/start" className="button-link">
+              Continue editing request
+            </Link>
           </>
         ) : (
           <>
