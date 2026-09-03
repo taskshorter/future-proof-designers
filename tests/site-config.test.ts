@@ -7,10 +7,12 @@ describe("site configuration", () => {
     expect(siteConfig.name).toBe("FPDesigner");
     expect(primaryNavigation.map((item) => item.href)).toEqual([
       "/",
+      "/start",
       "/about",
       "/portfolio",
       "/testimonials",
       "/contact",
+      "/portal",
     ]);
   });
 });

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { siteConfig } from "@/config/site";
 
 export default function HomePage() {
@@ -7,10 +9,12 @@ export default function HomePage() {
       <p>{siteConfig.tagline}</p>
       <div className="panel">
         <p className="muted">
-          This is the B1-P0 application foundation. Public pages are present for
-          routing continuity. Product features, authentication, and integrations
-          arrive in later authorized workstreams.
+          B1-P1 adds website entry, account sign-in, and protected project resume.
+          Start with three short discovery questions.
         </p>
+        <Link href="/start" className="button-link">
+          Start website project
+        </Link>
       </div>
     </div>
   );

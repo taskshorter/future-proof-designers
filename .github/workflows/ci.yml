@@ -15,6 +15,9 @@ jobs:
     env:
       APP_ENV: local
       NEXT_PUBLIC_APP_ENV: local
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-publishable-key
+      FACTORY_CUSTOMER_GATEWAY_URL: http://127.0.0.1:3001
     steps:
       - name: Checkout
         uses: actions/checkout@v7

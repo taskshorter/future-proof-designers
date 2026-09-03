@@ -13,8 +13,10 @@ export type NavItem = {
 
 export const primaryNavigation: readonly NavItem[] = [
   { href: "/", label: "Home" },
+  { href: "/start", label: "Start" },
   { href: "/about", label: "About" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/testimonials", label: "Testimonials" },
   { href: "/contact", label: "Contact" },
+  { href: "/portal", label: "Portal" },
 ] as const;
