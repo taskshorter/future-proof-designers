@@ -70,8 +70,7 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
         )}
       </section>
       <p className="muted">
-        Continue onboarding will arrive in B2. This page confirms the protected
-        resume detail contract only.
+        Your project is saved and ready for the next onboarding steps.
       </p>
       <Link href="/portal">Back to projects</Link>
     </div>
