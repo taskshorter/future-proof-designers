@@ -9,8 +9,8 @@ export default function HomePage() {
       <p>{siteConfig.tagline}</p>
       <div className="panel">
         <p className="muted">
-          B1-P1 adds website entry, account sign-in, and protected project resume.
-          Start with three short discovery questions.
+          Start a website project with three short discovery questions. Sign in to
+          save your work and return to it later.
         </p>
         <Link href="/start" className="button-link">
           Start website project
