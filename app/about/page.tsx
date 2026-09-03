@@ -9,8 +9,8 @@ export default function AboutPage() {
     <div className="page-stack">
       <h1>About</h1>
       <p>
-        FPDesigner builds custom websites for businesses. Detailed company
-        narrative and brand presentation will be added in a later design pass.
+        FPDesigner builds custom websites for businesses through a clear,
+        guided process.
       </p>
     </div>
   );

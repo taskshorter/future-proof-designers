@@ -2,7 +2,7 @@ export const siteConfig = {
   name: "FPDesigner",
   shortName: "FPDesigner",
   description:
-    "Custom websites for businesses. Application foundation under active rebuild.",
+    "Custom websites for businesses, built around a clear and guided process.",
   tagline: "Custom websites for businesses.",
 } as const;
 
