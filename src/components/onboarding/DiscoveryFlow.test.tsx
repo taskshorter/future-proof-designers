@@ -102,4 +102,31 @@ describe("DiscoveryFlow hydration", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
   });
+
+  it("creates a fresh draft after remount when the prior draft was consumed", async () => {
+    const storage = createMemoryStorage();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: storage,
+    });
+
+    const first = render(<DiscoveryFlow />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Do you currently have a website?")).toBeInTheDocument();
+    });
+
+    const operationIdA = JSON.parse(storage.getItem(DRAFT_STORAGE_KEY)!).operationId as string;
+    storage.removeItem(DRAFT_STORAGE_KEY);
+    first.unmount();
+
+    render(<DiscoveryFlow />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Do you currently have a website?")).toBeInTheDocument();
+    });
+
+    const operationIdB = JSON.parse(storage.getItem(DRAFT_STORAGE_KEY)!).operationId as string;
+    expect(operationIdB).not.toBe(operationIdA);
+  });
 });

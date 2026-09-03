@@ -8,7 +8,11 @@ import {
 } from "./discovery-draft-store";
 import { createDraft } from "./schema";
 import { DRAFT_STORAGE_KEY } from "./schema";
-import { writePreAccountDraft } from "./storage";
+import {
+  clearPreAccountDraft,
+  readPreAccountDraft,
+  writePreAccountDraft,
+} from "./storage";
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>();
@@ -34,6 +38,12 @@ function createMemoryStorage(): Storage {
   };
 }
 
+async function flushMicrotasks(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    queueMicrotask(resolve);
+  });
+}
+
 describe("discovery draft store", () => {
   beforeEach(() => {
     resetDiscoveryDraftStoreForTests();
@@ -54,13 +64,11 @@ describe("discovery draft store", () => {
     writePreAccountDraft(existing, storage);
 
     const changes: number[] = [];
-    subscribeDiscoveryDraft(() => {
+    const unsubscribe = subscribeDiscoveryDraft(() => {
       changes.push(1);
     });
 
-    await new Promise<void>((resolve) => {
-      queueMicrotask(resolve);
-    });
+    await flushMicrotasks();
 
     const raw = getDiscoveryDraftRawSnapshot();
     expect(parseDiscoveryDraftRaw(raw)?.operationId).toBe(existing.operationId);
@@ -68,5 +76,63 @@ describe("discovery draft store", () => {
       existing.operationId,
     );
     expect(changes.length).toBeGreaterThan(0);
+
+    unsubscribe();
+  });
+
+  it("does not rotate operationId when a second subscriber joins the same mount", async () => {
+    const storage = createMemoryStorage();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: storage,
+    });
+
+    const first = subscribeDiscoveryDraft(() => {});
+    await flushMicrotasks();
+    const operationIdA = readPreAccountDraft(storage)!.operationId;
+
+    const second = subscribeDiscoveryDraft(() => {});
+    await flushMicrotasks();
+
+    expect(readPreAccountDraft(storage)!.operationId).toBe(operationIdA);
+
+    second();
+    first();
+  });
+});
+
+describe("discovery draft re-entry", () => {
+  beforeEach(() => {
+    resetDiscoveryDraftStoreForTests();
+  });
+
+  it("creates a new draft after prior draft consumption without module reload", async () => {
+    const storage = createMemoryStorage();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: storage,
+    });
+
+    const unsubscribeFirst = subscribeDiscoveryDraft(() => {});
+    await flushMicrotasks();
+
+    const operationIdA = readPreAccountDraft(storage)!.operationId;
+    expect(operationIdA).toBeTruthy();
+
+    clearPreAccountDraft(storage);
+    expect(readPreAccountDraft(storage)).toBeNull();
+
+    unsubscribeFirst();
+
+    const unsubscribeSecond = subscribeDiscoveryDraft(() => {});
+    await flushMicrotasks();
+
+    const operationIdB = readPreAccountDraft(storage)!.operationId;
+    expect(operationIdB).toBeTruthy();
+    expect(operationIdB).not.toBe(operationIdA);
+    expect(getDiscoveryDraftRawSnapshot()).not.toBeNull();
+    expect(parseDiscoveryDraftRaw(getDiscoveryDraftRawSnapshot())).not.toBeNull();
+
+    unsubscribeSecond();
   });
 });
