@@ -33,7 +33,7 @@ function useDiscoveryDraft(): PreAccountDraft | null {
   return useMemo(() => parseDiscoveryDraftRaw(draftRaw), [draftRaw]);
 }
 
-export function DiscoveryFlow() {
+export function DiscoveryFlow({ isSignedIn }: { isSignedIn: boolean }) {
   const router = useRouter();
   const draft = useDiscoveryDraft();
   const [step, setStep] = useState<Step>(1);
@@ -99,6 +99,7 @@ export function DiscoveryFlow() {
             <button
               type="button"
               className={draft.answers.hasExistingWebsite === true ? "active" : ""}
+              aria-pressed={draft.answers.hasExistingWebsite === true}
               onClick={() => void persistAnswers({ hasExistingWebsite: true })}
             >
               Yes
@@ -106,6 +107,7 @@ export function DiscoveryFlow() {
             <button
               type="button"
               className={draft.answers.hasExistingWebsite === false ? "active" : ""}
+              aria-pressed={draft.answers.hasExistingWebsite === false}
               onClick={() =>
                 void persistAnswers({
                   hasExistingWebsite: false,
@@ -151,10 +153,10 @@ export function DiscoveryFlow() {
           </label>
           <p className="muted">
             Public business links such as Instagram or Yelp are deferred to a later
-            onboarding step and are not collected in B1-P1.
+            onboarding step and are not collected here.
           </p>
           <div className="button-row">
-            <button type="button" onClick={() => setStep(1)}>
+            <button type="button" className="secondary" onClick={() => setStep(1)}>
               Back
             </button>
             <button type="button" onClick={() => setStep(3)}>
@@ -176,7 +178,7 @@ export function DiscoveryFlow() {
             />
           </label>
           <div className="button-row">
-            <button type="button" onClick={() => setStep(2)}>
+            <button type="button" className="secondary" onClick={() => setStep(2)}>
               Back
             </button>
             <button type="button" onClick={() => setStep("review")}>
@@ -211,18 +213,27 @@ export function DiscoveryFlow() {
           </dl>
           {message ? <p className="form-error">{message}</p> : null}
           <div className="button-row">
-            <button type="button" onClick={() => setStep(3)}>
+            <button type="button" className="secondary" onClick={() => setStep(3)}>
               Back
             </button>
-            <Link href="/sign-up?next=/start" className="button-link">
-              Create account
-            </Link>
-            <Link href="/sign-in?next=/start" className="button-link secondary">
-              Sign in
-            </Link>
-            <button type="button" disabled={submitting} onClick={() => void handleSaveProject()}>
-              {submitting ? "Saving…" : "Save project"}
-            </button>
+            {isSignedIn ? (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => void handleSaveProject()}
+              >
+                {submitting ? "Saving…" : "Save project"}
+              </button>
+            ) : (
+              <>
+                <Link href="/sign-up?next=/start" className="button-link">
+                  Create account
+                </Link>
+                <Link href="/sign-in?next=/start" className="button-link secondary">
+                  Sign in
+                </Link>
+              </>
+            )}
           </div>
         </section>
       ) : null}

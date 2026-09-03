@@ -152,7 +152,9 @@ button:focus-visible {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  padding: 1rem 1.1rem;
+  padding: 1.25rem 1.35rem;
+  display: grid;
+  gap: 1rem;
 }
 
 .error-actions {
@@ -188,7 +190,7 @@ button:focus-visible {
 .choice-row,
 .site-header-actions {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.85rem;
   flex-wrap: wrap;
   align-items: center;
 }
@@ -208,22 +210,33 @@ button:focus-visible {
   background: var(--ink);
   color: var(--header-ink);
   border-radius: 0.35rem;
-  padding: 0.45rem 0.8rem;
+  padding: 0.5rem 0.9rem;
   cursor: pointer;
 }
 
 .button-link.secondary,
-.discovery-flow button.active,
-.choice-row button.active {
+.discovery-flow button.secondary,
+.panel button.secondary {
   background: transparent;
   color: var(--ink);
+}
+
+.choice-row button {
+  background: transparent;
+  color: var(--ink);
+  min-width: 5.5rem;
+}
+
+.choice-row button.active {
+  background: var(--ink);
+  color: var(--header-ink);
 }
 
 .auth-form,
 .discovery-flow label,
 .panel label {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.45rem;
 }
 
 .auth-form input,

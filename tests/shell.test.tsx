@@ -22,13 +22,13 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("@/lib/supabase/server", () => ({
+  getVerifiedServerAuthUserId: vi.fn(async () => null),
+}));
+
 describe("AppShell", () => {
-  it("renders accessible shell landmarks and brand", () => {
-    render(
-      <AppShell>
-        <p>Shell child content</p>
-      </AppShell>,
-    );
+  it("renders accessible shell landmarks and brand", async () => {
+    render(await AppShell({ children: <p>Shell child content</p> }));
 
     expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute(
       "href",
@@ -40,5 +40,8 @@ describe("AppShell", () => {
     expect(screen.getByRole("contentinfo")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "FPDesigner" })).toBeInTheDocument();
     expect(screen.getByText("Shell child content")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create account" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
   });
 });

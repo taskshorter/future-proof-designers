@@ -8,8 +8,7 @@ export function SiteFooter() {
           <strong>{siteConfig.name}</strong>
         </p>
         <p className="muted">
-          Application foundation (B1-P0). Auth and product integrations are not
-          included in this release.
+          Custom websites for businesses — clear process, lasting structure.
         </p>
       </div>
     </footer>
