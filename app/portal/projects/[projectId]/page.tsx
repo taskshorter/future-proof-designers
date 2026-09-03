@@ -8,6 +8,8 @@ export const metadata: Metadata = {
   title: "Project",
 };
 
+export const dynamic = "force-dynamic";
+
 type ProjectDetailPageProps = {
   params: Promise<{ projectId: string }>;
 };

@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   title: "Portal",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function PortalPage() {
   const state = await loadPortalResumeState();
 
