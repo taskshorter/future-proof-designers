@@ -2,11 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore, useState } from "react";
 
+import { buildSignInPath } from "@/lib/auth/safe-return-path";
+import {
+  getDiscoveryDraftRawSnapshot,
+  parseDiscoveryDraftRaw,
+  subscribeDiscoveryDraft,
+} from "@/lib/draft/discovery-draft-store";
 import {
   clearPreAccountDraft,
-  loadOrCreateDraft,
   saveDraftAnswers,
 } from "@/lib/draft/storage";
 import {
@@ -18,11 +23,19 @@ import { submitProjectStartAction } from "@/lib/projects/actions";
 
 type Step = 1 | 2 | 3 | "review";
 
+function useDiscoveryDraft(): PreAccountDraft | null {
+  const draftRaw = useSyncExternalStore(
+    subscribeDiscoveryDraft,
+    getDiscoveryDraftRawSnapshot,
+    () => null,
+  );
+
+  return useMemo(() => parseDiscoveryDraftRaw(draftRaw), [draftRaw]);
+}
+
 export function DiscoveryFlow() {
   const router = useRouter();
-  const [draft, setDraft] = useState<PreAccountDraft | null>(() =>
-    typeof window === "undefined" ? null : loadOrCreateDraft(),
-  );
+  const draft = useDiscoveryDraft();
   const [step, setStep] = useState<Step>(1);
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -38,13 +51,15 @@ export function DiscoveryFlow() {
 
   async function persistAnswers(updates: Partial<PreAccountDraft["answers"]>) {
     const next = saveDraftAnswers(updates);
-    setDraft(next);
     return next;
   }
 
   async function handleSaveProject() {
-    const current = loadOrCreateDraft();
-    const validationError = validateDraftAnswersForSubmit(current.answers);
+    if (!draft) {
+      return;
+    }
+
+    const validationError = validateDraftAnswersForSubmit(draft.answers);
     if (validationError) {
       setMessage(validationError);
       return;
@@ -54,8 +69,8 @@ export function DiscoveryFlow() {
     setMessage(null);
 
     const result = await submitProjectStartAction({
-      operationId: current.operationId,
-      answers: current.answers,
+      operationId: draft.operationId,
+      answers: draft.answers,
     });
 
     setSubmitting(false);
@@ -63,7 +78,7 @@ export function DiscoveryFlow() {
     if (!result.ok) {
       if (result.category === "auth_required" || result.category === "session_expired") {
         setMessage(result.message);
-        router.push("/sign-in?next=/start");
+        router.push(buildSignInPath("/start"));
         return;
       }
 

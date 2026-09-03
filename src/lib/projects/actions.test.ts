@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FactoryErrorCategory } from "@/lib/factory/contract";
 import {
+  loadPortalResumeState,
   loadProjectResumeDetail,
   submitProjectStartAction,
 } from "./actions";
@@ -9,6 +10,7 @@ import {
 const getVerifiedAccessToken = vi.fn();
 const getProjectResumeDetail = vi.fn();
 const startOrSaveProject = vi.fn();
+const listResumeProjects = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   getVerifiedAccessToken: () => getVerifiedAccessToken(),
@@ -17,7 +19,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/factory/gateway", () => ({
   getProjectResumeDetail: (...args: unknown[]) => getProjectResumeDetail(...args),
   startOrSaveProject: (...args: unknown[]) => startOrSaveProject(...args),
-  listResumeProjects: vi.fn(),
+  listResumeProjects: (...args: unknown[]) => listResumeProjects(...args),
 }));
 
 const completeAnswers = {
@@ -156,4 +158,74 @@ describe("project actions", () => {
       expect(result.status).toBe("reauth");
     },
   );
+});
+
+describe("loadPortalResumeState", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getVerifiedAccessToken.mockResolvedValue("access-token");
+  });
+
+  it("returns success with a genuine empty project list", async () => {
+    listResumeProjects.mockResolvedValue({ ok: true, data: [] });
+
+    const state = await loadPortalResumeState();
+
+    expect(state).toEqual({ status: "success", projects: [] });
+  });
+
+  it("returns structured error for temporary_failure instead of empty success", async () => {
+    listResumeProjects.mockResolvedValue({
+      ok: false,
+      category: "temporary_failure",
+      message: "Retry",
+    });
+
+    const state = await loadPortalResumeState();
+
+    expect(state).toEqual({
+      status: "error",
+      category: "temporary_failure",
+      message: "The service is temporarily unavailable. Please try again.",
+    });
+    expect(state.status).not.toBe("success");
+  });
+
+  it("returns structured error for internal_error instead of empty success", async () => {
+    listResumeProjects.mockResolvedValue({
+      ok: false,
+      category: "internal_error",
+      message: "Fail",
+    });
+
+    const state = await loadPortalResumeState();
+
+    expect(state.status).toBe("error");
+    if (state.status === "error") {
+      expect(state.category).toBe("internal_error");
+    }
+  });
+
+  it("returns reauth for session_expired list failures", async () => {
+    listResumeProjects.mockResolvedValue({
+      ok: false,
+      category: "session_expired",
+      message: "Expired",
+    });
+
+    const state = await loadPortalResumeState();
+
+    expect(state.status).toBe("reauth");
+    if (state.status === "reauth") {
+      expect(state.signInPath).toBe("/sign-in?next=%2Fportal");
+    }
+  });
+
+  it("returns unauthenticated when local verified session is absent", async () => {
+    getVerifiedAccessToken.mockResolvedValue(null);
+
+    const state = await loadPortalResumeState();
+
+    expect(state).toEqual({ status: "unauthenticated" });
+  });
 });

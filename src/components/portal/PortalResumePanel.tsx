@@ -19,7 +19,6 @@ import { submitProjectStartAction } from "@/lib/projects/actions";
 
 type PortalResumePanelProps = {
   projects: ProjectResumeSummary[];
-  errorMessage?: string;
 };
 
 function getDraftSnapshot(): string | null {
@@ -58,9 +57,9 @@ function useClientHydrated() {
   );
 }
 
-export function PortalResumePanel({ projects, errorMessage }: PortalResumePanelProps) {
+export function PortalResumePanel({ projects }: PortalResumePanelProps) {
   const router = useRouter();
-  const [message, setMessage] = useState<string | null>(errorMessage ?? null);
+  const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const draft = usePreAccountDraft();
   const hydrated = useClientHydrated();

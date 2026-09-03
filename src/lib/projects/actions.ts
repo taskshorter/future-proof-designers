@@ -32,11 +32,15 @@ export type ProjectActionResult =
       message: string;
     };
 
-export type PortalResumeState = {
-  authenticated: boolean;
-  projects: ProjectResumeSummary[];
-  errorMessage?: string;
-};
+export type PortalResumeState =
+  | { status: "unauthenticated" }
+  | { status: "reauth"; message: string; signInPath: string }
+  | { status: "success"; projects: ProjectResumeSummary[] }
+  | {
+      status: "error";
+      category: FactoryErrorCategory;
+      message: string;
+    };
 
 export type ProjectDetailLoadResult =
   | { status: "success"; data: ProjectResumeDetail }
@@ -116,20 +120,28 @@ export async function submitProjectStartAction(input: {
 export async function loadPortalResumeState(): Promise<PortalResumeState> {
   const accessToken = await getVerifiedAccessToken();
   if (!accessToken) {
-    return { authenticated: false, projects: [] };
+    return { status: "unauthenticated" };
   }
 
   const result = await listResumeProjects(await gatewayDeps());
   if (!result.ok) {
+    if (result.category === "auth_required" || result.category === "session_expired") {
+      return {
+        status: "reauth",
+        message: mapFactoryCategoryToUserMessage(result.category),
+        signInPath: buildSignInPath("/portal"),
+      };
+    }
+
     return {
-      authenticated: true,
-      projects: [],
-      errorMessage: mapFactoryCategoryToUserMessage(result.category),
+      status: "error",
+      category: result.category,
+      message: mapFactoryCategoryToUserMessage(result.category),
     };
   }
 
   return {
-    authenticated: true,
+    status: "success",
     projects: result.data,
   };
 }

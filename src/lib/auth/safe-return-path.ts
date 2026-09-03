@@ -1,25 +1,36 @@
 export const DEFAULT_RETURN_PATH = "/portal";
 
-function isSafeInternalPath(value: string): boolean {
+const ALLOWED_DESTINATION =
+  /^\/(?:portal(?:\/projects\/[^/]+)?|start)(?:[?#][^/\\@]*)?$/;
+
+function rejectsRawInput(value: string): boolean {
   if (!value.startsWith("/") || value.startsWith("//")) {
-    return false;
+    return true;
   }
 
   if (value.includes("\\") || value.includes("@")) {
-    return false;
+    return true;
   }
 
   const lower = value.toLowerCase();
+  return lower.includes("http:") || lower.includes("https:");
+}
+
+function isNormalizedPathSafe(path: string): boolean {
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return false;
+  }
+
+  if (path.includes("\\") || path.includes("@")) {
+    return false;
+  }
+
+  const lower = path.toLowerCase();
   if (lower.includes("http:") || lower.includes("https:")) {
     return false;
   }
 
-  try {
-    const url = new URL(value, "http://localhost");
-    return url.origin === "http://localhost" && url.pathname.startsWith("/");
-  } catch {
-    return false;
-  }
+  return ALLOWED_DESTINATION.test(path);
 }
 
 export function sanitizeInternalReturnPath(input: unknown): string {
@@ -28,13 +39,23 @@ export function sanitizeInternalReturnPath(input: unknown): string {
   }
 
   const trimmed = input.trim();
-  if (!trimmed || !isSafeInternalPath(trimmed)) {
+  if (!trimmed || rejectsRawInput(trimmed)) {
     return DEFAULT_RETURN_PATH;
   }
 
-  const url = new URL(trimmed, "http://localhost");
-  const path = `${url.pathname}${url.search}${url.hash}`;
-  return path.length > 0 ? path : DEFAULT_RETURN_PATH;
+  let path: string;
+  try {
+    const url = new URL(trimmed, "http://localhost");
+    path = `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return DEFAULT_RETURN_PATH;
+  }
+
+  if (!path || !isNormalizedPathSafe(path)) {
+    return DEFAULT_RETURN_PATH;
+  }
+
+  return path;
 }
 
 export function buildSignInPath(nextPath: unknown): string {

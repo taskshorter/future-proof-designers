@@ -28,11 +28,36 @@ describe("sanitizeInternalReturnPath", () => {
     expect(sanitizeInternalReturnPath(null)).toBe(DEFAULT_RETURN_PATH);
   });
 
+  it("rejects normalized path traversal and protocol-relative bypass vectors", () => {
+    for (const value of ["/a/..//evil.example", "/%2e//evil.example"]) {
+      const sanitized = sanitizeInternalReturnPath(value);
+      expect(sanitized.startsWith("//")).toBe(false);
+      expect(sanitized).toBe(DEFAULT_RETURN_PATH);
+    }
+  });
+
+  it("never returns a protocol-relative path", () => {
+    const vectors = [
+      "//evil.example",
+      "/a/..//evil.example",
+      "/%2e//evil.example",
+      "/portal/../../../evil.example",
+    ];
+
+    for (const value of vectors) {
+      const sanitized = sanitizeInternalReturnPath(value);
+      expect(sanitized.startsWith("//")).toBe(false);
+    }
+  });
+
   it("builds a safe sign-in continuation path", () => {
     expect(buildSignInPath("/portal/projects/123")).toBe(
       "/sign-in?next=%2Fportal%2Fprojects%2F123",
     );
     expect(buildSignInPath("//evil.example")).toBe(
+      `/sign-in?next=${encodeURIComponent(DEFAULT_RETURN_PATH)}`,
+    );
+    expect(buildSignInPath("/a/..//evil.example")).toBe(
       `/sign-in?next=${encodeURIComponent(DEFAULT_RETURN_PATH)}`,
     );
   });
