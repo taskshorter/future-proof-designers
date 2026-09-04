@@ -17,6 +17,10 @@ export function getServerEnv(): ServerEnv {
   cached = parseServerEnv({
     APP_ENV: process.env.APP_ENV,
     NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    FACTORY_CUSTOMER_GATEWAY_URL: process.env.FACTORY_CUSTOMER_GATEWAY_URL,
   });
 
   return cached;

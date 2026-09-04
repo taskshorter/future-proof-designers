@@ -2,7 +2,7 @@ export const siteConfig = {
   name: "FPDesigner",
   shortName: "FPDesigner",
   description:
-    "Custom websites for businesses. Application foundation under active rebuild.",
+    "Custom websites for businesses, built around a clear and guided process.",
   tagline: "Custom websites for businesses.",
 } as const;
 
@@ -13,8 +13,10 @@ export type NavItem = {
 
 export const primaryNavigation: readonly NavItem[] = [
   { href: "/", label: "Home" },
+  { href: "/start", label: "Start" },
   { href: "/about", label: "About" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/testimonials", label: "Testimonials" },
   { href: "/contact", label: "Contact" },
+  { href: "/portal", label: "Portal" },
 ] as const;

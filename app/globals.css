@@ -152,7 +152,9 @@ button:focus-visible {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  padding: 1rem 1.1rem;
+  padding: 1.25rem 1.35rem;
+  display: grid;
+  gap: 1rem;
 }
 
 .error-actions {
@@ -178,4 +180,105 @@ button:focus-visible {
 .error-actions button.secondary {
   background: transparent;
   color: var(--ink);
+}
+
+.page-stack.narrow {
+  max-width: 28rem;
+}
+
+.button-row,
+.choice-row,
+.site-header-actions {
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.site-header-actions a,
+.text-button,
+.button-link {
+  font: inherit;
+  text-decoration: none;
+}
+
+.button-link,
+.auth-form button,
+.discovery-flow button,
+.panel button {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--header-ink);
+  border-radius: 0.35rem;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+.button-link.secondary,
+.discovery-flow button.secondary,
+.panel button.secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.choice-row button {
+  background: transparent;
+  color: var(--ink);
+  min-width: 5.5rem;
+}
+
+.choice-row button.active {
+  background: var(--ink);
+  color: var(--header-ink);
+}
+
+.auth-form,
+.discovery-flow label,
+.panel label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.auth-form input,
+.auth-form button,
+.discovery-flow input,
+.discovery-flow textarea,
+.panel input,
+.panel textarea {
+  font: inherit;
+}
+
+.auth-form input,
+.discovery-flow input,
+.discovery-flow textarea,
+.panel input,
+.panel textarea {
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  padding: 0.45rem 0.55rem;
+}
+
+.form-error {
+  color: #7f1d1d;
+}
+
+.form-success {
+  color: #14532d;
+}
+
+.review-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.review-list dt {
+  font-weight: 600;
+}
+
+.project-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
 }

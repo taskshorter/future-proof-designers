@@ -14,6 +14,9 @@ export const metadata: Metadata = {
   applicationName: siteConfig.shortName,
 };
 
+/** Session-aware chrome requires a verified per-request auth check. */
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({
   children,
 }: Readonly<{

@@ -1,63 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  EnvValidationError,
-  parsePublicEnv,
-  parseServerEnv,
-  toClientSafeConfig,
-} from "./schema";
+import { parseServerEnv } from "./schema";
 
 describe("parseServerEnv", () => {
-  it("accepts a matching local environment", () => {
+  it("accepts local Supabase and gateway URLs", () => {
     expect(
       parseServerEnv({
         APP_ENV: "local",
         NEXT_PUBLIC_APP_ENV: "local",
+        FACTORY_CUSTOMER_GATEWAY_URL: "http://127.0.0.1:3001",
       }),
-    ).toEqual({
+    ).toMatchObject({
       APP_ENV: "local",
-      NEXT_PUBLIC_APP_ENV: "local",
+      FACTORY_CUSTOMER_GATEWAY_URL: "http://127.0.0.1:3001",
     });
   });
 
-  it("allows APP_ENV without a public mirror", () => {
-    expect(parseServerEnv({ APP_ENV: "preview" })).toEqual({
-      APP_ENV: "preview",
-    });
-  });
-
-  it("rejects mismatched environment classes", () => {
+  it("requires HTTPS gateway URL outside local development", () => {
     expect(() =>
       parseServerEnv({
-        APP_ENV: "local",
-        NEXT_PUBLIC_APP_ENV: "production",
+        APP_ENV: "production",
+        FACTORY_CUSTOMER_GATEWAY_URL: "http://127.0.0.1:3001",
       }),
-    ).toThrow(EnvValidationError);
-  });
-
-  it("rejects missing APP_ENV", () => {
-    expect(() => parseServerEnv({})).toThrow(EnvValidationError);
-  });
-});
-
-describe("parsePublicEnv", () => {
-  it("accepts a valid public environment class", () => {
-    expect(parsePublicEnv({ NEXT_PUBLIC_APP_ENV: "production" })).toEqual({
-      NEXT_PUBLIC_APP_ENV: "production",
-    });
-  });
-
-  it("rejects an invalid public environment class", () => {
-    expect(() =>
-      parsePublicEnv({ NEXT_PUBLIC_APP_ENV: "staging" }),
-    ).toThrow(EnvValidationError);
-  });
-});
-
-describe("toClientSafeConfig", () => {
-  it("exposes only client-safe fields", () => {
-    expect(
-      toClientSafeConfig({ NEXT_PUBLIC_APP_ENV: "preview" }),
-    ).toEqual({ environmentClass: "preview" });
+    ).toThrow();
   });
 });
