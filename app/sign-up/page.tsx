@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth/AuthForm";
 import { signUpAction } from "@/lib/auth/actions";
 import { sanitizeInternalReturnPath } from "@/lib/auth/safe-return-path";
+import { getVerifiedServerAuthUserId } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Create account",
@@ -14,6 +16,12 @@ type SignUpPageProps = {
 
 export default async function SignUpPage({ searchParams }: SignUpPageProps) {
   const params = await searchParams;
+  const nextPath = sanitizeInternalReturnPath(params.next);
+  const userId = await getVerifiedServerAuthUserId();
+
+  if (userId) {
+    redirect(nextPath);
+  }
 
   return (
     <div className="page-stack narrow">
@@ -25,7 +33,7 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
       <AuthForm
         action={signUpAction}
         submitLabel="Create account"
-        nextPath={sanitizeInternalReturnPath(params.next)}
+        nextPath={nextPath}
       />
     </div>
   );
