@@ -72,7 +72,15 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
       <p className="muted">
         Your project is saved and ready for the next onboarding steps.
       </p>
-      <Link href="/portal">Back to projects</Link>
+      <div className="button-row">
+        <Link
+          className="button-link"
+          href={`/portal/projects/${encodeURIComponent(projectId)}/onboarding`}
+        >
+          Continue onboarding
+        </Link>
+        <Link href="/portal">Back to projects</Link>
+      </div>
     </div>
   );
 }

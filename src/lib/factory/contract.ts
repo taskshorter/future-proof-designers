@@ -102,6 +102,91 @@ export const projectResumeDetailSuccessSchema = z.object({
 export type ProjectResumeSummary = z.infer<typeof resumeProjectSummarySchema>;
 export type ProjectResumeDetail = z.infer<typeof projectResumeDetailSuccessSchema>;
 
+export const ONBOARDING_SECTION_KEYS = [
+  "BUSINESS",
+  "BRAND",
+  "CONTENT",
+  "GOALS",
+  "REVIEW",
+] as const;
+
+export type OnboardingSectionKey = (typeof ONBOARDING_SECTION_KEYS)[number];
+
+export const ONBOARDING_SECTION_STATUSES = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "COMPLETE",
+] as const;
+
+export type OnboardingSectionStatus =
+  (typeof ONBOARDING_SECTION_STATUSES)[number];
+
+export const ONBOARDING_WRITE_STATUSES = ["IN_PROGRESS", "COMPLETE"] as const;
+
+export type OnboardingWriteStatus = (typeof ONBOARDING_WRITE_STATUSES)[number];
+
+export const ONBOARDING_ANSWER_ORIGINS = [
+  "CUSTOMER_ENTERED",
+  "CUSTOMER_CONFIRMED",
+] as const;
+
+export const onboardingSectionSchema = z.object({
+  sectionKey: z.enum(ONBOARDING_SECTION_KEYS),
+  status: z.enum(ONBOARDING_SECTION_STATUSES),
+  version: z.number().int().nonnegative(),
+  completedAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+
+export const onboardingAnswerSchema = z.object({
+  fieldKey: z.string().min(1),
+  sectionKey: z.enum(ONBOARDING_SECTION_KEYS),
+  value: z.unknown(),
+  origin: z.enum(ONBOARDING_ANSWER_ORIGINS),
+  version: z.number().int().positive(),
+  updatedAt: z.string(),
+});
+
+export const getProjectOnboardingSuccessSchema = z.object({
+  ok: z.literal(true),
+  projectId: z.string().uuid(),
+  sections: z.array(onboardingSectionSchema).length(5),
+  answers: z.array(onboardingAnswerSchema),
+});
+
+export type ProjectOnboardingState = z.infer<
+  typeof getProjectOnboardingSuccessSchema
+>;
+
+export const saveProjectOnboardingSectionRequestSchema = z.object({
+  operationId: z.string().min(1).max(128),
+  correlationId: z.string().uuid(),
+  expectedVersion: z.number().int().nonnegative(),
+  status: z.enum(ONBOARDING_WRITE_STATUSES),
+  answers: z.record(z.string(), z.unknown()).default({}),
+  removeFieldKeys: z.array(z.string()).default([]),
+});
+
+export type SaveProjectOnboardingSectionRequest = z.infer<
+  typeof saveProjectOnboardingSectionRequestSchema
+>;
+
+export const saveProjectOnboardingSectionSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  sectionKey: z.enum(ONBOARDING_SECTION_KEYS),
+  status: z.enum(ONBOARDING_WRITE_STATUSES),
+  version: z.number().int().positive(),
+  completedAt: z.string().nullable(),
+  updatedAnswerFieldKeys: z.array(z.string()),
+  removedFieldKeys: z.array(z.string()),
+});
+
+export type SaveProjectOnboardingSectionSuccess = z.infer<
+  typeof saveProjectOnboardingSectionSuccessSchema
+>;
+
 export type FactoryGatewayResult<T> =
   | { ok: true; data: T }
   | { ok: false; category: FactoryErrorCategory; message: string };
@@ -116,7 +201,7 @@ export function mapFactoryCategoryToUserMessage(
     case "temporary_failure":
       return "The service is temporarily unavailable. Please try again.";
     case "stale_or_conflicting":
-      return "This request conflicts with an earlier attempt. Use the same saved answers or contact support.";
+      return "This project was updated elsewhere. Reload the saved version before continuing.";
     case "invalid_input":
       return "Some information could not be accepted. Review your answers and try again.";
     case "permission_denied":

@@ -233,4 +233,124 @@ describe("Factory gateway client", () => {
     });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("GETs onboarding with exact path and parses success", async () => {
+    const { getProjectOnboarding } = await import("./gateway");
+    const body = {
+      ok: true,
+      projectId: "00000000-0000-4000-8000-000000000013",
+      sections: [
+        {
+          sectionKey: "BUSINESS",
+          status: "NOT_STARTED",
+          version: 0,
+          completedAt: null,
+          updatedAt: null,
+        },
+        {
+          sectionKey: "BRAND",
+          status: "NOT_STARTED",
+          version: 0,
+          completedAt: null,
+          updatedAt: null,
+        },
+        {
+          sectionKey: "CONTENT",
+          status: "NOT_STARTED",
+          version: 0,
+          completedAt: null,
+          updatedAt: null,
+        },
+        {
+          sectionKey: "GOALS",
+          status: "NOT_STARTED",
+          version: 0,
+          completedAt: null,
+          updatedAt: null,
+        },
+        {
+          sectionKey: "REVIEW",
+          status: "NOT_STARTED",
+          version: 0,
+          completedAt: null,
+          updatedAt: null,
+        },
+      ],
+      answers: [],
+    };
+    const fetchImpl = mockFetch(new Response(JSON.stringify(body), { status: 200 }));
+    const result = await getProjectOnboarding("00000000-0000-4000-8000-000000000013", {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "http://127.0.0.1:3001/api/v1/projects/00000000-0000-4000-8000-000000000013/onboarding",
+    );
+    expect(init.method).toBe("GET");
+    expect(init.headers).toMatchObject({ Authorization: "Bearer access-token" });
+  });
+
+  it("PUTs onboarding section with exact path and body", async () => {
+    const { saveProjectOnboardingSection } = await import("./gateway");
+    const success = {
+      ok: true,
+      replayed: false,
+      projectId: "00000000-0000-4000-8000-000000000013",
+      sectionKey: "BUSINESS",
+      status: "IN_PROGRESS",
+      version: 1,
+      completedAt: null,
+      updatedAnswerFieldKeys: ["business.name"],
+      removedFieldKeys: [],
+    };
+    const fetchImpl = mockFetch(new Response(JSON.stringify(success), { status: 200 }));
+    const result = await saveProjectOnboardingSection(
+      "00000000-0000-4000-8000-000000000013",
+      "BUSINESS",
+      {
+        operationId: "op-1",
+        correlationId: "00000000-0000-4000-8000-000000000099",
+        expectedVersion: 0,
+        status: "IN_PROGRESS",
+        answers: { "business.name": "Taco Shop" },
+        removeFieldKeys: [],
+      },
+      {
+        fetchImpl,
+        getAccessToken: async () => "access-token",
+        getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+      },
+    );
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "http://127.0.0.1:3001/api/v1/projects/00000000-0000-4000-8000-000000000013/onboarding/sections/BUSINESS",
+    );
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      operationId: "op-1",
+      expectedVersion: 0,
+      status: "IN_PROGRESS",
+      answers: { "business.name": "Taco Shop" },
+    });
+  });
+
+  it("rejects malformed onboarding success payloads", async () => {
+    const { getProjectOnboarding } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(JSON.stringify({ ok: true, projectId: "bad" }), { status: 200 }),
+    );
+    const result = await getProjectOnboarding("00000000-0000-4000-8000-000000000013", {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.category).toBe("internal_error");
+    }
+  });
 });

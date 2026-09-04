@@ -282,3 +282,49 @@ button:focus-visible {
   display: grid;
   gap: 0.5rem;
 }
+
+.deeper-onboarding .stage-progress {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.stage-chip {
+  display: grid;
+  gap: 0.2rem;
+  text-align: left;
+}
+
+.field-editor,
+.repeatable-list,
+.structured-item,
+.review-section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.repeatable-row {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 40rem) {
+  .repeatable-row {
+    grid-template-columns: 1fr;
+  }
+}
+

@@ -3,16 +3,23 @@ import "server-only";
 import { getServerEnv } from "@/lib/env/get-server-env";
 import {
   factoryErrorResponseSchema,
+  getProjectOnboardingSuccessSchema,
   projectResumeDetailSuccessSchema,
   projectResumeListSuccessSchema,
   projectStartRequestSchema,
   projectStartSuccessSchema,
+  saveProjectOnboardingSectionRequestSchema,
+  saveProjectOnboardingSectionSuccessSchema,
   type FactoryErrorCategory,
   type FactoryGatewayResult,
+  type OnboardingSectionKey,
+  type ProjectOnboardingState,
   type ProjectResumeDetail,
   type ProjectStartRequest,
   type ProjectStartSuccess,
   type ProjectResumeSummary,
+  type SaveProjectOnboardingSectionRequest,
+  type SaveProjectOnboardingSectionSuccess,
 } from "./contract";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -162,5 +169,36 @@ export async function getProjectResumeDetail(
     { method: "GET" },
     deps,
     (payload) => projectResumeDetailSuccessSchema.parse(payload),
+  );
+}
+
+export async function getProjectOnboarding(
+  projectId: string,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ProjectOnboardingState>> {
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/onboarding`,
+    { method: "GET" },
+    deps,
+    (payload) => getProjectOnboardingSuccessSchema.parse(payload),
+  );
+}
+
+export async function saveProjectOnboardingSection(
+  projectId: string,
+  sectionKey: OnboardingSectionKey,
+  request: SaveProjectOnboardingSectionRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<SaveProjectOnboardingSectionSuccess>> {
+  const normalized = saveProjectOnboardingSectionRequestSchema.parse(request);
+
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/onboarding/sections/${encodeURIComponent(sectionKey)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => saveProjectOnboardingSectionSuccessSchema.parse(payload),
   );
 }
