@@ -43,7 +43,8 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { DeeperOnboardingFlow } from "./DeeperOnboardingFlow";
+import { DeeperOnboardingFlow, buildSavePayload } from "./DeeperOnboardingFlow";
+import { fieldByKey } from "@/lib/onboarding/field-ui";
 
 const projectId = "00000000-0000-4000-8000-000000000013";
 
@@ -312,7 +313,7 @@ describe("DeeperOnboardingFlow", () => {
   it("failed Continue does not advance", async () => {
     saveOnboardingSectionAction.mockResolvedValue({
       ok: false,
-      category: "upstream_unavailable",
+      category: "temporary_failure",
       message: "Temporary failure",
     });
 
@@ -337,7 +338,7 @@ describe("DeeperOnboardingFlow", () => {
     saveOnboardingSectionAction
       .mockResolvedValueOnce({
         ok: false,
-        category: "upstream_unavailable",
+        category: "temporary_failure",
         message: "Temporary failure",
       })
       .mockResolvedValueOnce(successSave({ status: "COMPLETE", version: 1 }));
@@ -759,5 +760,393 @@ describe("DeeperOnboardingFlow", () => {
     await vi.advanceTimersByTimeAsync(60);
     await waitFor(() => expect(saveOnboardingSectionAction).toHaveBeenCalled());
     expect(saveOnboardingSectionAction.mock.calls[0]![0].status).toBe("COMPLETE");
+  });
+
+  it("serializes in-flight saves and follows up with newer edits at the new version", async () => {
+    let releaseFirst: ((value: unknown) => void) | null = null;
+    saveOnboardingSectionAction.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          if (!releaseFirst) {
+            releaseFirst = resolve;
+            return;
+          }
+          resolve(
+            successSave({
+              status: "IN_PROGRESS",
+              version: 2,
+              updatedAnswerFieldKeys: ["business.how_business_works"],
+            }),
+          );
+        }),
+    );
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding()}
+        debounceMs={50}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Business name/i), {
+      target: { value: "Alpha" },
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    await waitFor(() => expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(1));
+    expect(saveOnboardingSectionAction.mock.calls[0]![0].answers["business.name"]).toBe(
+      "Alpha",
+    );
+    expect(saveOnboardingSectionAction.mock.calls[0]![0].expectedVersion).toBe(0);
+
+    fireEvent.change(screen.getByLabelText(/How the business works/i), {
+      target: { value: "Beta detail" },
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(1);
+
+    releaseFirst!(
+      successSave({
+        status: "IN_PROGRESS",
+        version: 1,
+        updatedAnswerFieldKeys: ["business.name"],
+      }),
+    );
+
+    await waitFor(() => expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(2));
+    const second = saveOnboardingSectionAction.mock.calls[1]![0];
+    expect(second.expectedVersion).toBe(1);
+    expect(second.answers["business.how_business_works"]).toBe("Beta detail");
+    expect(second.answers).not.toHaveProperty("business.name");
+    expect(screen.getByDisplayValue("Beta detail")).toBeInTheDocument();
+  });
+
+  it("does not self-conflict when Continue waits on an in-flight autosave", async () => {
+    let releaseFirst: ((value: unknown) => void) | null = null;
+    const seenVersions: number[] = [];
+    saveOnboardingSectionAction.mockImplementation((input: { expectedVersion: number; status: string; answers: Record<string, unknown> }) => {
+      seenVersions.push(input.expectedVersion);
+      if (!releaseFirst) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve(
+        successSave({
+          status: input.status,
+          version: input.expectedVersion + 1,
+          updatedAnswerFieldKeys: Object.keys(input.answers),
+        }),
+      );
+    });
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding()}
+        debounceMs={50}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Business name/i), {
+      target: { value: "Serialize Shop" },
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    await waitFor(() => expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(1));
+
+    const continuePromise = Promise.resolve(
+      fireEvent.click(screen.getByRole("button", { name: "Continue" })),
+    );
+    await continuePromise;
+    await vi.advanceTimersByTimeAsync(10);
+    expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(1);
+
+    releaseFirst!(
+      successSave({
+        status: "IN_PROGRESS",
+        version: 1,
+        updatedAnswerFieldKeys: ["business.name"],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Brand" })).toBeInTheDocument();
+    });
+    expect(seenVersions.filter((version) => version === 0)).toHaveLength(1);
+    expect(Math.max(...seenVersions)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("serializes stage navigation against an in-flight save and lands latest edits", async () => {
+    let releaseFirst: ((value: unknown) => void) | null = null;
+    saveOnboardingSectionAction.mockImplementation(
+      (input: { expectedVersion: number; answers: Record<string, unknown> }) => {
+        if (!releaseFirst) {
+          return new Promise((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        return Promise.resolve(
+          successSave({
+            status: "IN_PROGRESS",
+            version: input.expectedVersion + 1,
+            updatedAnswerFieldKeys: Object.keys(input.answers),
+          }),
+        );
+      },
+    );
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding()}
+        debounceMs={50}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Business name/i), {
+      target: { value: "Nav A" },
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    await waitFor(() => expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText(/Business name/i), {
+      target: { value: "Nav Final" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Brand/i }));
+
+    expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(1);
+    releaseFirst!(
+      successSave({
+        status: "IN_PROGRESS",
+        version: 1,
+        updatedAnswerFieldKeys: ["business.name"],
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Brand" })).toBeInTheDocument();
+    });
+    await waitFor(() => expect(saveOnboardingSectionAction.mock.calls.length).toBeGreaterThan(1));
+    const last = saveOnboardingSectionAction.mock.calls.at(-1)![0];
+    expect(last.expectedVersion).toBe(1);
+    expect(last.answers["business.name"]).toBe("Nav Final");
+  });
+
+  it("does not resend unchanged complex fields when editing one scalar", () => {
+    const section = {
+      status: "IN_PROGRESS" as const,
+      version: 3,
+      values: {
+        "business.name": "Shop",
+        "business.social_links": ["https://one.example"],
+        "business.offerings": [{ name: "Tacos", notes: "Soft" }],
+        "business.public_contact": { phone: "555", email: "a@b.c" },
+        "business.hours": {
+          timezone: "America/Los_Angeles",
+          entries: [{ days: "Mon-Fri", open: "9", close: "5" }],
+        },
+        "business.how_business_works": "Updated",
+      },
+      savedValues: {
+        "business.name": "Shop",
+        "business.social_links": ["https://one.example"],
+        "business.offerings": [{ name: "Tacos", notes: "Soft" }],
+        "business.public_contact": { phone: "555", email: "a@b.c" },
+        "business.hours": {
+          timezone: "America/Los_Angeles",
+          entries: [{ days: "Mon-Fri", open: "9", close: "5" }],
+        },
+        "business.how_business_works": "Old",
+      },
+      savedKeys: new Set([
+        "business.name",
+        "business.social_links",
+        "business.offerings",
+        "business.public_contact",
+        "business.hours",
+        "business.how_business_works",
+      ]),
+      conflict: false,
+      fieldError: null,
+      revealHidden: false,
+    };
+
+    const payload = buildSavePayload(section);
+    expect(payload.validationError).toBeNull();
+    expect(payload.answers).toEqual({
+      "business.how_business_works": "Updated",
+    });
+    expect(payload.removeFieldKeys).toEqual([]);
+  });
+
+  it("does not emit a pointless dirty save for cloned complex COMPLETE values", () => {
+    const saved = {
+      "business.name": "Shop",
+      "business.offerings": [{ name: "Tacos", notes: "Soft" }],
+    };
+    const section = {
+      status: "COMPLETE" as const,
+      version: 4,
+      values: structuredClone(saved),
+      savedValues: saved,
+      savedKeys: new Set(Object.keys(saved)),
+      conflict: false,
+      fieldError: null,
+      revealHidden: false,
+    };
+    const payload = buildSavePayload(section);
+    expect(payload.answers).toEqual({});
+    expect(payload.removeFieldKeys).toEqual([]);
+  });
+
+  it("clears a saved brand.current_state via removeFieldKeys", async () => {
+    saveOnboardingSectionAction.mockResolvedValue(
+      successSave({
+        sectionKey: "BRAND",
+        status: "IN_PROGRESS",
+        version: 2,
+        updatedAnswerFieldKeys: [],
+        removedFieldKeys: ["brand.current_state"],
+      }),
+    );
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding({
+          sections: emptySections({
+            BUSINESS: { status: "COMPLETE", version: 1 },
+            BRAND: { status: "IN_PROGRESS", version: 1 },
+          }),
+          answers: [
+            {
+              fieldKey: "brand.current_state",
+              sectionKey: "BRAND",
+              value: "starting fresh",
+              origin: "CUSTOMER_ENTERED",
+              version: 1,
+              updatedAt: "2026-04-01T00:00:00.000Z",
+            },
+          ],
+        })}
+        debounceMs={50}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Brand" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    await vi.advanceTimersByTimeAsync(60);
+    await waitFor(() => expect(saveOnboardingSectionAction).toHaveBeenCalled());
+    const payload = saveOnboardingSectionAction.mock.calls[0]![0];
+    expect(payload.removeFieldKeys).toEqual(["brand.current_state"]);
+    expect(payload.answers).not.toHaveProperty("brand.current_state");
+  });
+
+  it("shows Retry only for temporary_failure and not for invalid_input", async () => {
+    saveOnboardingSectionAction.mockResolvedValue({
+      ok: false,
+      category: "invalid_input",
+      message: "Some information could not be accepted.",
+    });
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding()}
+        debounceMs={50}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("Some information could not be accepted."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Retry save" })).not.toBeInTheDocument();
+  });
+
+  it("does not reuse operationId after editing following temporary_failure", async () => {
+    saveOnboardingSectionAction
+      .mockResolvedValueOnce({
+        ok: false,
+        category: "temporary_failure",
+        message: "Temporary failure",
+      })
+      .mockResolvedValueOnce(successSave({ status: "COMPLETE", version: 1 }));
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding()}
+        debounceMs={50}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Business name/i), {
+      target: { value: "First" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Retry save" })).toBeInTheDocument();
+    });
+    const firstOp = saveOnboardingSectionAction.mock.calls[0]![0].operationId;
+
+    fireEvent.change(screen.getByLabelText(/Business name/i), {
+      target: { value: "Second" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(saveOnboardingSectionAction).toHaveBeenCalledTimes(2));
+    expect(saveOnboardingSectionAction.mock.calls[1]![0].operationId).not.toBe(firstOp);
+    expect(saveOnboardingSectionAction.mock.calls[1]![0].answers["business.name"]).toBe(
+      "Second",
+    );
+  });
+
+  it("keeps local input and blocks save when required nested field is missing", async () => {
+    const payload = buildSavePayload({
+      status: "IN_PROGRESS",
+      version: 0,
+      values: {
+        "business.offerings": [{ name: "", notes: "Only notes" }],
+      },
+      savedValues: {},
+      savedKeys: new Set(),
+      conflict: false,
+      fieldError: null,
+      revealHidden: false,
+    });
+    expect(payload.validationError).toMatch(/Offering name/i);
+    expect(payload.answers).toEqual({});
+    expect(fieldByKey("business.offerings")?.itemFields?.[0]?.required).toBe(true);
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding()}
+        debounceMs={50}
+      />,
+    );
+
+    const offerings = screen.getByText("Offerings").closest("fieldset");
+    expect(offerings).toBeTruthy();
+    fireEvent.click(within(offerings!).getByRole("button", { name: "Add" }));
+    fireEvent.change(within(offerings!).getByLabelText(/^Notes/), {
+      target: { value: "Only notes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/needs Offering name/i).length).toBeGreaterThan(0);
+    });
+    expect(saveOnboardingSectionAction).not.toHaveBeenCalled();
+    expect(within(offerings!).getByDisplayValue("Only notes")).toBeInTheDocument();
   });
 });

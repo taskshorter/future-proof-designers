@@ -23,6 +23,8 @@ import {
   fieldByKey,
   fieldsForSection,
   isFieldValueEmpty,
+  prepareAnswerForSave,
+  semanticEqual,
   type OnboardingFieldUi,
 } from "@/lib/onboarding/field-ui";
 
@@ -39,12 +41,32 @@ type SectionLocalState = {
   revealHidden: boolean;
 };
 
+type SaveRequestSnapshot = {
+  sectionKey: OnboardingSectionKey;
+  expectedVersion: number;
+  status: "IN_PROGRESS" | "COMPLETE";
+  answers: Record<string, unknown>;
+  removeFieldKeys: string[];
+  operationId: string;
+  correlationId: string;
+  localValuesSnapshot: Record<string, unknown>;
+};
+
+type QueuedPersist = {
+  status: "IN_PROGRESS" | "COMPLETE";
+  resolve: (ok: boolean) => void;
+};
+
 function cloneValues(values: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(values)) as Record<string, unknown>;
 }
 
+function cloneUnknown<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function valuesEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return semanticEqual(a, b);
 }
 
 function hydrateFromOnboarding(
@@ -86,52 +108,57 @@ function initialActiveSection(
   return "REVIEW";
 }
 
-function buildSavePayload(section: SectionLocalState): {
+export function buildSavePayload(section: SectionLocalState): {
   answers: Record<string, unknown>;
   removeFieldKeys: string[];
-  businessNameError: string | null;
+  validationError: string | null;
 } {
   const answers: Record<string, unknown> = {};
   const removeFieldKeys: string[] = [];
-  let businessNameError: string | null = null;
+  let validationError: string | null = null;
 
-  const allKeys = new Set([
-    ...Object.keys(section.values),
-    ...section.savedKeys,
-  ]);
+  const allKeys = new Set([...Object.keys(section.values), ...section.savedKeys]);
 
   for (const fieldKey of allKeys) {
     const field = fieldByKey(fieldKey);
     if (!field) continue;
     const current = section.values[fieldKey];
     const hadSaved = section.savedKeys.has(fieldKey);
-    const empty = isFieldValueEmpty(current);
+    const prepared = prepareAnswerForSave(field, current);
+
+    if (prepared.kind === "error") {
+      validationError = prepared.message;
+      continue;
+    }
 
     if (fieldKey === "business.name") {
-      if (hadSaved && empty) {
-        businessNameError =
+      if (hadSaved && prepared.kind === "omit") {
+        validationError =
           "Business name cannot be cleared. Enter a replacement name or restore the saved value.";
         continue;
       }
-      if (!empty && current !== section.savedValues[fieldKey]) {
-        answers[fieldKey] = typeof current === "string" ? current.trim() : current;
+      if (
+        prepared.kind === "value" &&
+        !semanticEqual(prepared.value, section.savedValues[fieldKey])
+      ) {
+        answers[fieldKey] = prepared.value;
       }
       continue;
     }
 
-    if (empty) {
+    if (prepared.kind === "omit") {
       if (hadSaved && field.removable) {
         removeFieldKeys.push(fieldKey);
       }
       continue;
     }
 
-    if (current !== section.savedValues[fieldKey]) {
-      answers[fieldKey] = current;
+    if (!semanticEqual(prepared.value, section.savedValues[fieldKey])) {
+      answers[fieldKey] = prepared.value;
     }
   }
 
-  return { answers, removeFieldKeys, businessNameError };
+  return { answers, removeFieldKeys, validationError };
 }
 
 function isFieldVisible(
@@ -187,6 +214,13 @@ function formatAnswerValue(value: unknown): string {
   return String(value);
 }
 
+function preferStatus(
+  a: "IN_PROGRESS" | "COMPLETE",
+  b: "IN_PROGRESS" | "COMPLETE",
+): "IN_PROGRESS" | "COMPLETE" {
+  return a === "COMPLETE" || b === "COMPLETE" ? "COMPLETE" : "IN_PROGRESS";
+}
+
 type DeeperOnboardingFlowProps = {
   projectId: string;
   resume: ProjectResumeDetail;
@@ -207,17 +241,20 @@ export function DeeperOnboardingFlow({
   );
   const [saveStatus, setSaveStatusState] = useState<SaveStatus>("idle");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(false);
   const [finished, setFinished] = useState(
     () => onboarding.sections.every((section) => section.status === "COMPLETE"),
   );
-  const pendingIntent = useRef<{
-    operationId: string;
-    correlationId: string;
-    bodyKey: string;
+  const lastRetryIntent = useRef<{
+    sectionKey: OnboardingSectionKey;
+    snapshot: SaveRequestSnapshot;
   } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sectionsRef = useRef(sections);
   const saveStatusRef = useRef<SaveStatus>("idle");
+  const inFlightRef = useRef<Partial<Record<OnboardingSectionKey, Promise<boolean>>>>({});
+  const queueRef = useRef<Partial<Record<OnboardingSectionKey, QueuedPersist[]>>>({});
+  const drainingRef = useRef<Partial<Record<OnboardingSectionKey, boolean>>>({});
 
   const setSaveStatus = (next: SaveStatus) => {
     saveStatusRef.current = next;
@@ -246,24 +283,107 @@ export function DeeperOnboardingFlow({
     }
   };
 
-  const persistSection = async (
+  const applySuccessfulSnapshot = (
+    sectionKey: OnboardingSectionKey,
+    snapshot: SaveRequestSnapshot,
+    result: {
+      status: OnboardingSectionStatus;
+      version: number;
+      updatedAnswerFieldKeys: string[];
+      removedFieldKeys: string[];
+    },
+  ) => {
+    setSections((current) => {
+      const previous = current[sectionKey];
+      const nextSavedValues = cloneValues(previous.savedValues);
+      for (const [fieldKey, value] of Object.entries(snapshot.answers)) {
+        nextSavedValues[fieldKey] = cloneUnknown(value);
+      }
+      for (const fieldKey of snapshot.removeFieldKeys) {
+        delete nextSavedValues[fieldKey];
+      }
+
+      const nextSavedKeys = new Set(previous.savedKeys);
+      for (const key of result.updatedAnswerFieldKeys) {
+        nextSavedKeys.add(key);
+      }
+      for (const key of snapshot.removeFieldKeys) {
+        nextSavedKeys.delete(key);
+      }
+      for (const key of result.removedFieldKeys) {
+        nextSavedKeys.delete(key);
+      }
+
+      return {
+        ...current,
+        [sectionKey]: {
+          ...previous,
+          status: result.status,
+          version: result.version,
+          savedValues: nextSavedValues,
+          savedKeys: nextSavedKeys,
+          conflict: false,
+          fieldError: null,
+        },
+      };
+    });
+  };
+
+  const syncRefAfterSuccess = (
+    sectionKey: OnboardingSectionKey,
+    snapshot: SaveRequestSnapshot,
+    result: {
+      status: OnboardingSectionStatus;
+      version: number;
+      updatedAnswerFieldKeys: string[];
+      removedFieldKeys: string[];
+    },
+  ) => {
+    const synced = sectionsRef.current[sectionKey];
+    const nextSavedValues = cloneValues(synced.savedValues);
+    for (const [fieldKey, value] of Object.entries(snapshot.answers)) {
+      nextSavedValues[fieldKey] = cloneUnknown(value);
+    }
+    for (const fieldKey of snapshot.removeFieldKeys) {
+      delete nextSavedValues[fieldKey];
+    }
+    const nextSavedKeys = new Set(synced.savedKeys);
+    for (const key of result.updatedAnswerFieldKeys) nextSavedKeys.add(key);
+    for (const key of snapshot.removeFieldKeys) nextSavedKeys.delete(key);
+    for (const key of result.removedFieldKeys) nextSavedKeys.delete(key);
+    sectionsRef.current = {
+      ...sectionsRef.current,
+      [sectionKey]: {
+        ...synced,
+        status: result.status,
+        version: result.version,
+        savedValues: nextSavedValues,
+        savedKeys: nextSavedKeys,
+        conflict: false,
+        fieldError: null,
+      },
+    };
+  };
+
+  const executeSave = async (
     sectionKey: OnboardingSectionKey,
     status: "IN_PROGRESS" | "COMPLETE",
-    options?: { force?: boolean },
   ): Promise<boolean> => {
     const section = sectionsRef.current[sectionKey];
-    if (section.conflict && !options?.force) {
+    if (section.conflict) {
       return false;
     }
 
     const payload = buildSavePayload(section);
-    if (payload.businessNameError) {
+    if (payload.validationError) {
       setSections((current) => ({
         ...current,
-        [sectionKey]: { ...current[sectionKey], fieldError: payload.businessNameError },
+        [sectionKey]: { ...current[sectionKey], fieldError: payload.validationError },
       }));
       setSaveStatus("error");
-      setStatusMessage(payload.businessNameError);
+      setRetryable(false);
+      setStatusMessage(payload.validationError);
+      lastRetryIntent.current = null;
       return false;
     }
 
@@ -274,11 +394,14 @@ export function DeeperOnboardingFlow({
 
     if (unchanged && status !== "COMPLETE") {
       setSaveStatus("saved");
+      setRetryable(false);
       setStatusMessage("Saved");
       return true;
     }
 
     if (unchanged && status === "COMPLETE" && section.status === "COMPLETE") {
+      setSaveStatus("saved");
+      setRetryable(false);
       return true;
     }
 
@@ -291,81 +414,145 @@ export function DeeperOnboardingFlow({
 
     let operationId = crypto.randomUUID();
     let correlationId = crypto.randomUUID();
+    const retry = lastRetryIntent.current;
     if (
-      pendingIntent.current &&
-      pendingIntent.current.bodyKey === bodyKey &&
-      saveStatusRef.current === "error"
+      retry &&
+      retry.sectionKey === sectionKey &&
+      JSON.stringify({
+        expectedVersion: retry.snapshot.expectedVersion,
+        status: retry.snapshot.status,
+        answers: retry.snapshot.answers,
+        removeFieldKeys: retry.snapshot.removeFieldKeys,
+      }) === bodyKey
     ) {
-      operationId = pendingIntent.current.operationId;
-      correlationId = pendingIntent.current.correlationId;
-    } else {
-      pendingIntent.current = { operationId, correlationId, bodyKey };
+      operationId = retry.snapshot.operationId;
+      correlationId = retry.snapshot.correlationId;
     }
 
+    const snapshot: SaveRequestSnapshot = {
+      sectionKey,
+      expectedVersion: section.version,
+      status,
+      answers: cloneUnknown(payload.answers),
+      removeFieldKeys: [...payload.removeFieldKeys],
+      operationId,
+      correlationId,
+      localValuesSnapshot: cloneValues(section.values),
+    };
+
     setSaveStatus("saving");
+    setRetryable(false);
     setStatusMessage("Saving…");
 
     const result = await saveOnboardingSectionAction({
       projectId,
       sectionKey,
-      operationId,
-      correlationId,
-      expectedVersion: section.version,
-      status,
-      answers: payload.answers,
-      removeFieldKeys: payload.removeFieldKeys,
+      operationId: snapshot.operationId,
+      correlationId: snapshot.correlationId,
+      expectedVersion: snapshot.expectedVersion,
+      status: snapshot.status,
+      answers: snapshot.answers,
+      removeFieldKeys: snapshot.removeFieldKeys,
     });
 
     if (!result.ok) {
       if (result.category === "auth_required" || result.category === "session_expired") {
+        lastRetryIntent.current = null;
         router.push(buildSignInPath(`/portal/projects/${projectId}/onboarding`));
         return false;
       }
       if (result.category === "stale_or_conflicting") {
+        lastRetryIntent.current = null;
         setSections((current) => ({
           ...current,
           [sectionKey]: { ...current[sectionKey], conflict: true },
         }));
         setSaveStatus("conflict");
+        setRetryable(false);
         setStatusMessage(result.message);
         return false;
       }
+      if (result.category === "temporary_failure") {
+        lastRetryIntent.current = { sectionKey, snapshot };
+        setSaveStatus("error");
+        setRetryable(true);
+        setStatusMessage(result.message);
+        return false;
+      }
+      lastRetryIntent.current = null;
       setSaveStatus("error");
+      setRetryable(false);
       setStatusMessage(result.message);
       return false;
     }
 
-    setSections((current) => {
-      const previous = current[sectionKey];
-      const nextValues = cloneValues(previous.values);
-      for (const key of result.data.removedFieldKeys) {
-        delete nextValues[key];
-      }
-      const nextSavedKeys = new Set(previous.savedKeys);
-      for (const key of result.data.updatedAnswerFieldKeys) {
-        nextSavedKeys.add(key);
-      }
-      for (const key of result.data.removedFieldKeys) {
-        nextSavedKeys.delete(key);
-      }
-      return {
-        ...current,
-        [sectionKey]: {
-          ...previous,
-          status: result.data.status,
-          version: result.data.version,
-          values: nextValues,
-          savedValues: cloneValues(nextValues),
-          savedKeys: nextSavedKeys,
-          conflict: false,
-          fieldError: null,
-        },
-      };
-    });
-    pendingIntent.current = null;
+    lastRetryIntent.current = null;
+    applySuccessfulSnapshot(sectionKey, snapshot, result.data);
+    syncRefAfterSuccess(sectionKey, snapshot, result.data);
     setSaveStatus("saved");
+    setRetryable(false);
     setStatusMessage("Saved");
     return true;
+  };
+
+  const drainSection = async (sectionKey: OnboardingSectionKey) => {
+    if (drainingRef.current[sectionKey]) return;
+    drainingRef.current[sectionKey] = true;
+
+    try {
+      while (true) {
+        const batch = queueRef.current[sectionKey] ?? [];
+        queueRef.current[sectionKey] = [];
+
+        let status: "IN_PROGRESS" | "COMPLETE" | null = null;
+        if (batch.length > 0) {
+          status = batch.reduce<"IN_PROGRESS" | "COMPLETE">(
+            (current, item) => preferStatus(current, item.status),
+            "IN_PROGRESS",
+          );
+        } else {
+          const latest = sectionsRef.current[sectionKey];
+          if (!latest.conflict && !valuesEqual(latest.values, latest.savedValues)) {
+            status = latest.status === "COMPLETE" ? "COMPLETE" : "IN_PROGRESS";
+          }
+        }
+
+        if (!status) break;
+
+        const run = executeSave(sectionKey, status);
+        inFlightRef.current[sectionKey] = run;
+        const ok = await run;
+        delete inFlightRef.current[sectionKey];
+
+        for (const item of batch) {
+          item.resolve(ok);
+        }
+
+        if (!ok) {
+          const remaining = queueRef.current[sectionKey] ?? [];
+          queueRef.current[sectionKey] = [];
+          for (const item of remaining) item.resolve(false);
+          break;
+        }
+      }
+    } finally {
+      drainingRef.current[sectionKey] = false;
+      if ((queueRef.current[sectionKey] ?? []).length > 0) {
+        void drainSection(sectionKey);
+      }
+    }
+  };
+
+  const persistSection = (
+    sectionKey: OnboardingSectionKey,
+    status: "IN_PROGRESS" | "COMPLETE",
+  ): Promise<boolean> => {
+    return new Promise<boolean>((resolve) => {
+      const queue = queueRef.current[sectionKey] ?? [];
+      queue.push({ status, resolve });
+      queueRef.current[sectionKey] = queue;
+      void drainSection(sectionKey);
+    });
   };
 
   useEffect(() => {
@@ -374,19 +561,18 @@ export function DeeperOnboardingFlow({
       active.conflict ||
       saveStatus === "error" ||
       saveStatus === "conflict" ||
-      saveStatus === "saving"
+      Boolean(inFlightRef.current[activeSection]) ||
+      drainingRef.current[activeSection]
     ) {
       return;
     }
     clearTimer();
     saveTimer.current = setTimeout(() => {
+      if (inFlightRef.current[activeSection] || drainingRef.current[activeSection]) {
+        return;
+      }
       const section = sectionsRef.current[activeSection];
-      const nextStatus =
-        section.status === "NOT_STARTED"
-          ? "IN_PROGRESS"
-          : section.status === "COMPLETE"
-            ? "COMPLETE"
-            : "IN_PROGRESS";
+      const nextStatus = section.status === "COMPLETE" ? "COMPLETE" : "IN_PROGRESS";
       void persistSection(activeSection, nextStatus);
     }, debounceMs);
     return clearTimer;
@@ -402,29 +588,48 @@ export function DeeperOnboardingFlow({
   ]);
 
   const updateField = (fieldKey: string, value: unknown) => {
-    setSections((current) => ({
-      ...current,
-      [activeSection]: {
+    setSections((current) => {
+      const nextSection = {
         ...current[activeSection],
         values: { ...current[activeSection].values, [fieldKey]: value },
         fieldError: null,
-      },
-    }));
+      };
+      const next = {
+        ...current,
+        [activeSection]: nextSection,
+      };
+      sectionsRef.current = next;
+      return next;
+    });
+    if (saveStatusRef.current === "saving") {
+      return;
+    }
+    if (saveStatusRef.current === "error" || saveStatusRef.current === "conflict") {
+      lastRetryIntent.current = null;
+      setRetryable(false);
+    }
     setSaveStatus("idle");
     setStatusMessage(null);
   };
 
   const flushAndNavigate = async (nextSection: OnboardingSectionKey) => {
     clearTimer();
-    if (dirty && !active.conflict) {
+    if (active.conflict) return;
+    if (dirty || inFlightRef.current[activeSection] || drainingRef.current[activeSection]) {
       const nextStatus =
-        active.status === "NOT_STARTED"
-          ? "IN_PROGRESS"
-          : active.status === "COMPLETE"
-            ? "COMPLETE"
-            : "IN_PROGRESS";
+        sectionsRef.current[activeSection].status === "COMPLETE"
+          ? "COMPLETE"
+          : "IN_PROGRESS";
       const ok = await persistSection(activeSection, nextStatus);
       if (!ok) return;
+      const latest = sectionsRef.current[activeSection];
+      if (!valuesEqual(latest.values, latest.savedValues)) {
+        const again = await persistSection(
+          activeSection,
+          latest.status === "COMPLETE" ? "COMPLETE" : "IN_PROGRESS",
+        );
+        if (!again) return;
+      }
     }
     setActiveSection(nextSection);
   };
@@ -433,6 +638,14 @@ export function DeeperOnboardingFlow({
     clearTimer();
     const ok = await persistSection(activeSection, "COMPLETE");
     if (!ok) return;
+    const latest = sectionsRef.current[activeSection];
+    if (!valuesEqual(latest.values, latest.savedValues) || latest.status !== "COMPLETE") {
+      const again = await persistSection(activeSection, "COMPLETE");
+      if (!again) return;
+    }
+    if (sectionsRef.current[activeSection].status !== "COMPLETE") {
+      return;
+    }
     const index = SECTION_ORDER.indexOf(activeSection);
     if (activeSection === "REVIEW") {
       setFinished(true);
@@ -449,30 +662,23 @@ export function DeeperOnboardingFlow({
     }
     if (result.status !== "success") {
       setSaveStatus("error");
+      setRetryable(false);
       setStatusMessage(result.status === "not_found" ? "Project not found." : result.message);
       return;
     }
-    setSections(hydrateFromOnboarding(result.onboarding));
+    const next = hydrateFromOnboarding(result.onboarding);
+    sectionsRef.current = next;
+    setSections(next);
+    lastRetryIntent.current = null;
     setSaveStatus("saved");
+    setRetryable(false);
     setStatusMessage("Reloaded saved version");
   };
 
   const handleRetry = async () => {
-    let nextStatus: "IN_PROGRESS" | "COMPLETE" =
-      active.status === "COMPLETE" ? "COMPLETE" : "IN_PROGRESS";
-    if (pendingIntent.current) {
-      try {
-        const parsed = JSON.parse(pendingIntent.current.bodyKey) as {
-          status?: string;
-        };
-        if (parsed.status === "COMPLETE" || parsed.status === "IN_PROGRESS") {
-          nextStatus = parsed.status;
-        }
-      } catch {
-        // Fall back to section-derived status.
-      }
-    }
-    await persistSection(activeSection, nextStatus, { force: false });
+    const intent = lastRetryIntent.current;
+    if (!intent || intent.sectionKey !== activeSection) return;
+    await persistSection(activeSection, intent.snapshot.status);
   };
 
   return (
@@ -603,7 +809,10 @@ export function DeeperOnboardingFlow({
               <dl className="review-list">
                 {fieldsForSection(sectionKey).map((field) => {
                   const value = sections[sectionKey].values[field.fieldKey];
-                  if (isFieldValueEmpty(value) && !sections[sectionKey].savedKeys.has(field.fieldKey)) {
+                  if (
+                    isFieldValueEmpty(value) &&
+                    !sections[sectionKey].savedKeys.has(field.fieldKey)
+                  ) {
                     return null;
                   }
                   return (
@@ -680,12 +889,16 @@ export function DeeperOnboardingFlow({
         >
           Back
         </button>
-        {saveStatus === "error" ? (
+        {retryable ? (
           <button type="button" className="secondary" onClick={() => void handleRetry()}>
             Retry save
           </button>
         ) : null}
-        <button type="button" onClick={() => void handleContinue()} disabled={active.conflict}>
+        <button
+          type="button"
+          onClick={() => void handleContinue()}
+          disabled={active.conflict}
+        >
           {activeSection === "REVIEW" ? "Finish onboarding" : "Continue"}
         </button>
       </div>

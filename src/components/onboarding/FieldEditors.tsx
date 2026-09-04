@@ -41,6 +41,7 @@ export function OnboardingFieldEditor({ field, value, disabled, onChange }: Edit
   const id = `field-${field.fieldKey.replace(/\./g, "-")}`;
 
   if (field.editor === "choice" && field.choices) {
+    const selected = asString(value);
     return (
       <fieldset className="field-editor" disabled={disabled}>
         <legend>{field.label}</legend>
@@ -50,14 +51,23 @@ export function OnboardingFieldEditor({ field, value, disabled, onChange }: Edit
             <button
               key={choice.value}
               type="button"
-              className={asString(value) === choice.value ? "active" : "secondary"}
-              aria-pressed={asString(value) === choice.value}
+              className={selected === choice.value ? "active" : "secondary"}
+              aria-pressed={selected === choice.value}
               onClick={() => onChange(choice.value)}
             >
               {choice.label}
             </button>
           ))}
         </div>
+        {field.removable && selected ? (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => onChange("")}
+          >
+            Clear selection
+          </button>
+        ) : null}
       </fieldset>
     );
   }

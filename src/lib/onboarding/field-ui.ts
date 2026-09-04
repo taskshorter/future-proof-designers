@@ -434,11 +434,216 @@ export function assertOnboardingFieldCatalog(): {
 export function isFieldValueEmpty(value: unknown): boolean {
   if (value == null) return true;
   if (typeof value === "string") return value.trim() === "";
-  if (Array.isArray(value)) return value.length === 0;
+  if (Array.isArray(value)) {
+    return value.length === 0 || value.every((entry) => isFieldValueEmpty(entry));
+  }
   if (typeof value === "object") {
     return Object.values(value as Record<string, unknown>).every((entry) =>
       isFieldValueEmpty(entry),
     );
   }
   return false;
+}
+
+/** Deterministic JSON-safe normalize for semantic compare of onboarding values. */
+export function normalizeForCompare(value: unknown): unknown {
+  if (value == null) return null;
+  if (typeof value === "string") return value.trim();
+  if (typeof value !== "object") return value;
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => normalizeForCompare(entry))
+      .filter((entry) => !isNormalizedEmpty(entry));
+  }
+
+  const record = value as Record<string, unknown>;
+  const normalized: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    const next = normalizeForCompare(record[key]);
+    if (isNormalizedEmpty(next)) continue;
+    normalized[key] = next;
+  }
+  return normalized;
+}
+
+function isNormalizedEmpty(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") return value === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value as object).length === 0;
+  return false;
+}
+
+export function semanticEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(normalizeForCompare(a)) === JSON.stringify(normalizeForCompare(b));
+}
+
+export type PrepareAnswerResult =
+  | { kind: "omit" }
+  | { kind: "value"; value: unknown }
+  | { kind: "error"; message: string };
+
+function pruneBlankObjectProps(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === "string") {
+      const trimmed = entry.trim();
+      if (trimmed === "") continue;
+      next[key] = trimmed;
+      continue;
+    }
+    if (entry == null) continue;
+    if (Array.isArray(entry)) {
+      const nested = entry
+        .map((item) => {
+          if (item && typeof item === "object" && !Array.isArray(item)) {
+            return pruneBlankObjectProps(item as Record<string, unknown>);
+          }
+          if (typeof item === "string") {
+            const trimmed = item.trim();
+            return trimmed === "" ? null : trimmed;
+          }
+          return item;
+        })
+        .filter((item) => item != null && !isFieldValueEmpty(item));
+      if (nested.length === 0) continue;
+      next[key] = nested;
+      continue;
+    }
+    if (typeof entry === "object") {
+      const nested = pruneBlankObjectProps(entry as Record<string, unknown>);
+      if (Object.keys(nested).length === 0) continue;
+      next[key] = nested;
+      continue;
+    }
+    next[key] = entry;
+  }
+  return next;
+}
+
+function prepareStructuredList(
+  field: OnboardingFieldUi,
+  value: unknown,
+): PrepareAnswerResult {
+  if (!Array.isArray(value)) return { kind: "omit" };
+  const itemFields = field.itemFields ?? [];
+  const prepared: Record<string, unknown>[] = [];
+
+  for (let index = 0; index < value.length; index += 1) {
+    const raw = value[index];
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    if (isFieldValueEmpty(row)) continue;
+
+    for (const itemField of itemFields) {
+      if (!itemField.required) continue;
+      const cell = row[itemField.key];
+      if (typeof cell !== "string" || cell.trim() === "") {
+        return {
+          kind: "error",
+          message: `${field.label}: item ${index + 1} needs ${itemField.label}.`,
+        };
+      }
+    }
+
+    const pruned = pruneBlankObjectProps(row);
+    if (Object.keys(pruned).length === 0) continue;
+    prepared.push(pruned);
+  }
+
+  if (prepared.length === 0) return { kind: "omit" };
+  return { kind: "value", value: prepared };
+}
+
+function prepareHoursObject(field: OnboardingFieldUi, value: unknown): PrepareAnswerResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { kind: "omit" };
+  }
+  const hours = value as Record<string, unknown>;
+  const entriesRaw = Array.isArray(hours.entries) ? hours.entries : [];
+  const entries: Record<string, unknown>[] = [];
+
+  for (let index = 0; index < entriesRaw.length; index += 1) {
+    const raw = entriesRaw[index];
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const entry = raw as Record<string, unknown>;
+    if (isFieldValueEmpty(entry)) continue;
+
+    const days = typeof entry.days === "string" ? entry.days.trim() : "";
+    if (!days) {
+      return {
+        kind: "error",
+        message: `${field.label}: entry ${index + 1} needs Days.`,
+      };
+    }
+
+    const pruned = pruneBlankObjectProps(entry);
+    if (Object.keys(pruned).length === 0) continue;
+    entries.push(pruned);
+  }
+
+  const next: Record<string, unknown> = {};
+  if (typeof hours.timezone === "string" && hours.timezone.trim() !== "") {
+    next.timezone = hours.timezone.trim();
+  }
+  if (typeof hours.summary === "string" && hours.summary.trim() !== "") {
+    next.summary = hours.summary.trim();
+  }
+  if (entries.length > 0) {
+    next.entries = entries;
+  }
+
+  if (Object.keys(next).length === 0) return { kind: "omit" };
+  return { kind: "value", value: next };
+}
+
+function prepareContactObject(value: unknown): PrepareAnswerResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { kind: "omit" };
+  }
+  const pruned = pruneBlankObjectProps(value as Record<string, unknown>);
+  if (Object.keys(pruned).length === 0) return { kind: "omit" };
+  return { kind: "value", value: pruned };
+}
+
+function prepareStringOrUrlList(value: unknown): PrepareAnswerResult {
+  if (!Array.isArray(value)) return { kind: "omit" };
+  const next = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : String(entry ?? "").trim()))
+    .filter((entry) => entry.length > 0);
+  if (next.length === 0) return { kind: "omit" };
+  return { kind: "value", value: next };
+}
+
+/** Normalize a UI field value into a Factory-safe outbound answer, or omit/error. */
+export function prepareAnswerForSave(
+  field: OnboardingFieldUi,
+  value: unknown,
+): PrepareAnswerResult {
+  if (isFieldValueEmpty(value)) return { kind: "omit" };
+
+  switch (field.editor) {
+    case "short_text":
+    case "long_text":
+    case "choice": {
+      if (typeof value !== "string") return { kind: "omit" };
+      const trimmed = value.trim();
+      if (trimmed === "") return { kind: "omit" };
+      return { kind: "value", value: trimmed };
+    }
+    case "string_list":
+    case "url_list":
+      return prepareStringOrUrlList(value);
+    case "structured_list":
+      return prepareStructuredList(field, value);
+    case "contact_object":
+      return prepareContactObject(value);
+    case "hours_object":
+      return prepareHoursObject(field, value);
+    default:
+      return { kind: "omit" };
+  }
 }
