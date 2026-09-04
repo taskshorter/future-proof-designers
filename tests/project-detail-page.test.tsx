@@ -74,6 +74,12 @@ describe("ProjectDetailPage customer copy", () => {
     expect(
       screen.getByText("Your project is saved and ready for the next onboarding steps."),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Continue onboarding" }),
+    ).toHaveAttribute(
+      "href",
+      "/portal/projects/11111111-1111-4111-8111-111111111111/onboarding",
+    );
     expect(screen.queryByText(/B1|B2|tranche|contract/i)).not.toBeInTheDocument();
   });
 });

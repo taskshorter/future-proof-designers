@@ -13,7 +13,23 @@ describe("sanitizeInternalReturnPath", () => {
     expect(sanitizeInternalReturnPath("/portal/projects/abc")).toBe(
       "/portal/projects/abc",
     );
+    expect(sanitizeInternalReturnPath("/portal/projects/abc/onboarding")).toBe(
+      "/portal/projects/abc/onboarding",
+    );
+    expect(
+      sanitizeInternalReturnPath("/portal/projects/abc/onboarding?step=brand"),
+    ).toBe("/portal/projects/abc/onboarding?step=brand");
     expect(sanitizeInternalReturnPath("/start?step=review")).toBe("/start?step=review");
+  });
+
+  it("rejects nested attacker-controlled portal paths beyond onboarding", () => {
+    expect(sanitizeInternalReturnPath("/portal/projects/abc/onboarding/extra")).toBe(
+      DEFAULT_RETURN_PATH,
+    );
+    expect(sanitizeInternalReturnPath("/portal/projects/abc/settings")).toBe(
+      DEFAULT_RETURN_PATH,
+    );
+    expect(sanitizeInternalReturnPath("/portal/admin")).toBe(DEFAULT_RETURN_PATH);
   });
 
   it("rejects protocol-relative, absolute, backslash, and malformed values", () => {
