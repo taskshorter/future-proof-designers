@@ -134,6 +134,8 @@ export function ResearchFindingsPanel({
 
   const identityByIntent = useRef<Map<IntentKey, OperationIdentity>>(new Map());
   const inFlightResearchPoll = useRef(false);
+  const authorityBusyRef = useRef(false);
+  const researchEpochRef = useRef(0);
   const researchRef = useRef(research);
   const flushBeforeReconcileRef = useRef(flushBeforeReconcile);
   const getSectionVersionRef = useRef(getSectionVersion);
@@ -148,6 +150,15 @@ export function ResearchFindingsPanel({
 
   const pollResearchOnlyRef = useRef<() => Promise<void>>(async () => undefined);
 
+  const setSyncBusy = (busy: boolean) => {
+    authorityBusyRef.current = busy;
+    if (busy) {
+      researchEpochRef.current += 1;
+    }
+    setAuthorityBusy(busy);
+    onAuthoritativeSyncBusyChangeRef.current(busy);
+  };
+
   useEffect(() => {
     flushBeforeReconcileRef.current = flushBeforeReconcile;
     getSectionVersionRef.current = getSectionVersion;
@@ -156,11 +167,25 @@ export function ResearchFindingsPanel({
     onAuthoritativeSyncBusyChangeRef.current = onAuthoritativeSyncBusyChange;
     routerRef.current = router;
     pollResearchOnlyRef.current = async () => {
-      if (inFlightResearchPoll.current) return;
+      if (authorityBusyRef.current || inFlightResearchPoll.current) return;
       inFlightResearchPoll.current = true;
+      const epochAtStart = researchEpochRef.current;
       setRefreshing(true);
       try {
         const result = await refreshProjectResearchAction(projectId);
+        // Release the poll lock before applying so a waiting reconciliation can
+        // start and advance the research epoch; the checks below drop stale data.
+        inFlightResearchPoll.current = false;
+        setRefreshing(false);
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+        if (
+          authorityBusyRef.current ||
+          epochAtStart !== researchEpochRef.current
+        ) {
+          return;
+        }
         if (!result.ok) {
           if (result.signInPath) {
             routerRef.current.push(result.signInPath);
@@ -172,6 +197,12 @@ export function ResearchFindingsPanel({
           );
           return;
         }
+        if (
+          authorityBusyRef.current ||
+          epochAtStart !== researchEpochRef.current
+        ) {
+          return;
+        }
         onAuthoritativeStateRef.current({ research: result.research });
       } finally {
         inFlightResearchPoll.current = false;
@@ -179,11 +210,6 @@ export function ResearchFindingsPanel({
       }
     };
   });
-
-  const setSyncBusy = (busy: boolean) => {
-    setAuthorityBusy(busy);
-    onAuthoritativeSyncBusyChangeRef.current(busy);
-  };
 
   const shouldPollResearch =
     research.status === "ready" && hasActiveResearch(research.data.runs);
@@ -211,6 +237,9 @@ export function ResearchFindingsPanel({
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
       }
+      if (authorityBusyRef.current) {
+        return;
+      }
       const current = researchRef.current;
       if (current.status !== "ready" || !hasActiveResearch(current.data.runs)) {
         stop();
@@ -232,7 +261,11 @@ export function ResearchFindingsPanel({
       if (cancelled) return;
       if (document.visibilityState === "visible") {
         const current = researchRef.current;
-        if (current.status === "ready" && hasActiveResearch(current.data.runs)) {
+        if (
+          current.status === "ready" &&
+          hasActiveResearch(current.data.runs) &&
+          !authorityBusyRef.current
+        ) {
           void pollResearchOnlyRef.current().then(() => {
             if (!cancelled) start();
           });
@@ -282,7 +315,9 @@ export function ResearchFindingsPanel({
     candidate: ResearchCandidate;
     value?: unknown;
   }) => {
-    if (busyCandidateId || authorityBusy) return;
+    // While an auto-poll is in flight, mutation controls are disabled. Also hard-stop
+    // here so a forced click cannot overlap a poll that has not yet finished.
+    if (busyCandidateId || authorityBusy || inFlightResearchPoll.current) return;
     setBusyCandidateId(input.candidate.id);
     setEditError(null);
     setSyncBusy(true);
@@ -480,7 +515,8 @@ export function ResearchFindingsPanel({
   const reviewUnmapped =
     activeSection === "REVIEW" ? unmappedPendingCandidates(candidates) : [];
   const reviewed = reviewedCandidates(candidates);
-  const controlsBusy = authorityBusy || busyCandidateId !== null;
+  const controlsBusy =
+    authorityBusy || busyCandidateId !== null || refreshing;
 
   return (
     <section className="panel research-findings" aria-label="Research findings">

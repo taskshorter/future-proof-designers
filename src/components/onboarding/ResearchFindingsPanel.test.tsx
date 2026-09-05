@@ -789,4 +789,258 @@ describe("ResearchFindingsPanel", () => {
     });
     expect(refreshProjectResearchAction).toHaveBeenCalledTimes(1);
   });
+
+  it("disables Accept while an automatic research poll is unresolved", async () => {
+    vi.useFakeTimers();
+    let resolvePoll: (value: unknown) => void = () => undefined;
+    refreshProjectResearchAction.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePoll = resolve;
+        }),
+    );
+
+    renderPanel(makeResearch({ status: "RUNNING" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(refreshProjectResearchAction).toHaveBeenCalledTimes(1);
+
+    const accept = screen.getByRole("button", { name: "Accept" });
+    expect(accept).toBeDisabled();
+    fireEvent.click(accept);
+    expect(reconcileResearchCandidateAction).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolvePoll({
+        ok: true,
+        research: makeResearch({ status: "RUNNING" }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  });
+
+  it("does not start automatic polling while authoritative reconciliation is unresolved", async () => {
+    vi.useFakeTimers();
+    let resolveReconcile: (value: unknown) => void = () => undefined;
+    reconcileResearchCandidateAction.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReconcile = resolve;
+        }),
+    );
+    refreshProjectResearchAction.mockResolvedValue({
+      ok: true,
+      research: makeResearch({ status: "RUNNING" }),
+    });
+
+    renderPanel(makeResearch({ status: "RUNNING" }));
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(flushBeforeReconcile).toHaveBeenCalled();
+    expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(true);
+
+    const pollCallsBefore = refreshProjectResearchAction.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(refreshProjectResearchAction.mock.calls.length).toBe(pollCallsBefore);
+
+    await act(async () => {
+      resolveReconcile({
+        ok: true,
+        reconcile: {
+          ok: true,
+          replayed: false,
+          projectId,
+          candidateId,
+          disposition: "ACCEPTED",
+          fieldKey: "business.name",
+          sectionKey: "BUSINESS",
+          sectionVersion: 4,
+          answerVersion: 1,
+          completedAt: null,
+        },
+        onboarding: makeOnboarding(),
+        research: makeResearch({
+          status: "RUNNING",
+          candidates: [makeCandidate({ disposition: "ACCEPTED" })],
+        }),
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(false);
+  });
+
+  it("resumes polling after reconciliation unlocks when research is still active", async () => {
+    vi.useFakeTimers();
+    let resolveReconcile: (value: unknown) => void = () => undefined;
+    reconcileResearchCandidateAction.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReconcile = resolve;
+        }),
+    );
+    refreshProjectResearchAction.mockResolvedValue({
+      ok: true,
+      research: makeResearch({ status: "RUNNING" }),
+    });
+
+    const { rerender } = renderPanel(makeResearch({ status: "RUNNING" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(true);
+
+    const stillRunning = makeResearch({
+      status: "RUNNING",
+      candidates: [makeCandidate({ disposition: "ACCEPTED" })],
+    });
+    await act(async () => {
+      resolveReconcile({
+        ok: true,
+        reconcile: {
+          ok: true,
+          replayed: false,
+          projectId,
+          candidateId,
+          disposition: "ACCEPTED",
+          fieldKey: "business.name",
+          sectionKey: "BUSINESS",
+          sectionVersion: 4,
+          answerVersion: 1,
+          completedAt: null,
+        },
+        onboarding: makeOnboarding(),
+        research: stillRunning,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(false);
+
+    rerender(
+      <ResearchFindingsPanel
+        projectId={projectId}
+        research={stillRunning}
+        activeSection="BUSINESS"
+        getSectionVersion={getSectionVersion}
+        flushBeforeReconcile={flushBeforeReconcile}
+        onAuthoritativeState={onAuthoritativeState}
+        onNotice={onNotice}
+        onAuthoritativeSyncBusyChange={onAuthoritativeSyncBusyChange}
+      />,
+    );
+
+    const callsBefore = refreshProjectResearchAction.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(refreshProjectResearchAction.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it("does not apply a stale poll result after a newer authoritative reconciliation", async () => {
+    vi.useFakeTimers();
+    const stalePending = makeResearch({
+      status: "RUNNING",
+      candidates: [makeCandidate({ disposition: "PENDING", extractedValue: "STALE" })],
+    });
+    const accepted = makeResearch({
+      status: "RUNNING",
+      candidates: [
+        makeCandidate({ disposition: "ACCEPTED", extractedValue: "Taco Shop" }),
+      ],
+    });
+
+    let resolvePoll: (value: unknown) => void = () => undefined;
+    refreshProjectResearchAction.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePoll = resolve;
+        }),
+    );
+
+    renderPanel(makeResearch({ status: "RUNNING" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(screen.getByRole("button", { name: "Accept" })).toBeDisabled();
+
+    reconcileResearchCandidateAction.mockResolvedValue({
+      ok: true,
+      reconcile: {
+        ok: true,
+        replayed: false,
+        projectId,
+        candidateId,
+        disposition: "ACCEPTED",
+        fieldKey: "business.name",
+        sectionKey: "BUSINESS",
+        sectionVersion: 4,
+        answerVersion: 1,
+        completedAt: null,
+      },
+      onboarding: makeOnboarding(),
+      research: accepted,
+    });
+
+    onAuthoritativeState.mockClear();
+
+    // Network returns; poll unlocks then waits on setTimeout(0) before apply.
+    await act(async () => {
+      resolvePoll({ ok: true, research: stalePending });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("button", { name: "Accept" })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(reconcileResearchCandidateAction).toHaveBeenCalled();
+    expect(onAuthoritativeState).toHaveBeenCalledWith(
+      expect.objectContaining({ research: accepted }),
+    );
+
+    // Flush the deferred poll apply — epoch discard must drop STALE.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+
+    const researchUpdates = onAuthoritativeState.mock.calls
+      .map((call) => call[0] as { research?: ResearchLoadState })
+      .filter((payload) => payload.research)
+      .map((payload) => payload.research);
+    expect(
+      researchUpdates.some(
+        (entry) =>
+          entry?.status === "ready" &&
+          entry.data.candidates.some(
+            (candidate) =>
+              candidate.disposition === "PENDING" &&
+              candidate.extractedValue === "STALE",
+          ),
+      ),
+    ).toBe(false);
+    expect(
+      researchUpdates.some(
+        (entry) =>
+          entry?.status === "ready" &&
+          entry.data.candidates.some((candidate) => candidate.disposition === "ACCEPTED"),
+      ),
+    ).toBe(true);
+  });
 });
