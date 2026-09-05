@@ -42,6 +42,7 @@ export default async function ProjectOnboardingPage({ params }: OnboardingPagePr
       projectId={projectId}
       resume={result.resume}
       onboarding={result.onboarding}
+      research={result.research}
     />
   );
 }

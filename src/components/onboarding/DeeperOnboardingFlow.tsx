@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { OnboardingFieldEditor } from "@/components/onboarding/FieldEditors";
+import { ResearchFindingsPanel } from "@/components/onboarding/ResearchFindingsPanel";
 import { buildSignInPath } from "@/lib/auth/safe-return-path";
 import type {
   OnboardingSectionKey,
@@ -15,6 +16,7 @@ import type {
 import {
   reloadProjectOnboardingAction,
   saveOnboardingSectionAction,
+  type ResearchLoadState,
 } from "@/lib/onboarding/actions";
 import {
   AUTOSAVE_DEBOUNCE_MS,
@@ -225,6 +227,7 @@ type DeeperOnboardingFlowProps = {
   projectId: string;
   resume: ProjectResumeDetail;
   onboarding: ProjectOnboardingState;
+  research: ResearchLoadState;
   debounceMs?: number;
 };
 
@@ -232,10 +235,12 @@ export function DeeperOnboardingFlow({
   projectId,
   resume,
   onboarding,
+  research: initialResearch,
   debounceMs = AUTOSAVE_DEBOUNCE_MS,
 }: DeeperOnboardingFlowProps) {
   const router = useRouter();
   const [sections, setSections] = useState(() => hydrateFromOnboarding(onboarding));
+  const [research, setResearch] = useState<ResearchLoadState>(initialResearch);
   const [activeSection, setActiveSection] = useState<OnboardingSectionKey>(() =>
     initialActiveSection(onboarding.sections),
   );
@@ -669,10 +674,51 @@ export function DeeperOnboardingFlow({
     const next = hydrateFromOnboarding(result.onboarding);
     sectionsRef.current = next;
     setSections(next);
+    setResearch(result.research);
     lastRetryIntent.current = null;
     setSaveStatus("saved");
     setRetryable(false);
     setStatusMessage("Reloaded saved version");
+  };
+
+  const flushBeforeReconcile = async (): Promise<boolean> => {
+    clearTimer();
+    const sectionKey = activeSection;
+    const section = sectionsRef.current[sectionKey];
+    if (section.conflict) {
+      return false;
+    }
+    if (
+      !valuesEqual(section.values, section.savedValues) ||
+      inFlightRef.current[sectionKey] ||
+      drainingRef.current[sectionKey]
+    ) {
+      const nextStatus = section.status === "COMPLETE" ? "COMPLETE" : "IN_PROGRESS";
+      const ok = await persistSection(sectionKey, nextStatus);
+      if (!ok) return false;
+      const latest = sectionsRef.current[sectionKey];
+      if (!valuesEqual(latest.values, latest.savedValues)) {
+        const again = await persistSection(
+          sectionKey,
+          latest.status === "COMPLETE" ? "COMPLETE" : "IN_PROGRESS",
+        );
+        if (!again) return false;
+      }
+    }
+    return !sectionsRef.current[sectionKey].conflict;
+  };
+
+  const handleAuthoritativeState = (input: {
+    onboarding?: ProjectOnboardingState;
+    research: ResearchLoadState;
+  }) => {
+    if (input.onboarding) {
+      const next = hydrateFromOnboarding(input.onboarding);
+      sectionsRef.current = next;
+      setSections(next);
+      lastRetryIntent.current = null;
+    }
+    setResearch(input.research);
   };
 
   const handleRetry = async () => {
@@ -745,6 +791,28 @@ export function DeeperOnboardingFlow({
           );
         })}
       </nav>
+
+      <ResearchFindingsPanel
+        projectId={projectId}
+        research={research}
+        activeSection={activeSection}
+        getSectionVersion={(sectionKey) => sectionsRef.current[sectionKey].version}
+        flushBeforeReconcile={flushBeforeReconcile}
+        onAuthoritativeState={handleAuthoritativeState}
+        onNotice={(message, tone) => {
+          if (tone === "error") {
+            setSaveStatus("error");
+            setRetryable(false);
+          } else if (tone === "success") {
+            setSaveStatus("saved");
+            setRetryable(false);
+          } else {
+            setSaveStatus("idle");
+            setRetryable(false);
+          }
+          setStatusMessage(message);
+        }}
+      />
 
       {active.conflict ? (
         <div className="panel form-error" role="alert">

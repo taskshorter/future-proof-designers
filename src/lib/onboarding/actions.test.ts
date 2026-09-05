@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getVerifiedAccessToken = vi.fn();
 const getProjectResumeDetail = vi.fn();
 const getProjectOnboarding = vi.fn();
+const getProjectResearch = vi.fn();
+const acceptResearchCandidate = vi.fn();
+const editResearchCandidate = vi.fn();
+const rejectResearchCandidate = vi.fn();
 const saveProjectOnboardingSection = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -12,6 +16,10 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/factory/gateway", () => ({
   getProjectResumeDetail: (...args: unknown[]) => getProjectResumeDetail(...args),
   getProjectOnboarding: (...args: unknown[]) => getProjectOnboarding(...args),
+  getProjectResearch: (...args: unknown[]) => getProjectResearch(...args),
+  acceptResearchCandidate: (...args: unknown[]) => acceptResearchCandidate(...args),
+  editResearchCandidate: (...args: unknown[]) => editResearchCandidate(...args),
+  rejectResearchCandidate: (...args: unknown[]) => rejectResearchCandidate(...args),
   saveProjectOnboardingSection: (...args: unknown[]) =>
     saveProjectOnboardingSection(...args),
 }));
@@ -24,8 +32,10 @@ vi.mock("next/navigation", () => ({
 
 import {
   loadProjectOnboardingPageData,
+  reconcileResearchCandidateAction,
   saveOnboardingSectionAction,
 } from "./actions";
+import { mapFactoryCategoryToUserMessage } from "@/lib/factory/contract";
 
 const projectId = "00000000-0000-4000-8000-000000000013";
 
@@ -78,6 +88,10 @@ describe("onboarding actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getVerifiedAccessToken.mockResolvedValue("token");
+    getProjectResearch.mockResolvedValue({
+      ok: true,
+      data: { ok: true, projectId, runs: [], sources: [], candidates: [] },
+    });
   });
 
   it("loads resume and onboarding together", async () => {
@@ -89,7 +103,63 @@ describe("onboarding actions", () => {
     if (result.status === "success") {
       expect(result.resume.intake?.hasExistingWebsite).toBe(false);
       expect(result.onboarding.sections).toHaveLength(5);
+      expect(result.research.status).toBe("ready");
     }
+  });
+
+  it("keeps research load failures nonfatal for page success", async () => {
+    getProjectResumeDetail.mockResolvedValue({ ok: true, data: resume });
+    getProjectOnboarding.mockResolvedValue({ ok: true, data: emptyOnboarding });
+    getProjectResearch.mockResolvedValue({
+      ok: false,
+      category: "temporary_failure",
+      message: "down",
+    });
+
+    const result = await loadProjectOnboardingPageData(projectId);
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.research.status).toBe("unavailable");
+      if (result.research.status === "unavailable") {
+        expect(result.research.category).toBe("temporary_failure");
+      }
+    }
+  });
+
+  it("maps already_completed to customer-safe message", () => {
+    expect(mapFactoryCategoryToUserMessage("already_completed")).toBe(
+      "This finding was already handled. Refresh the latest project state.",
+    );
+  });
+
+  it("accept reconcile posts through gateway then reloads", async () => {
+    acceptResearchCandidate.mockResolvedValue({
+      ok: true,
+      data: {
+        ok: true,
+        replayed: false,
+        projectId,
+        candidateId: "00000000-0000-4000-8000-0000000000aa",
+        disposition: "ACCEPTED",
+        fieldKey: "business.name",
+        sectionKey: "BUSINESS",
+        sectionVersion: 2,
+        answerVersion: 1,
+        completedAt: null,
+      },
+    });
+    getProjectOnboarding.mockResolvedValue({ ok: true, data: emptyOnboarding });
+
+    const result = await reconcileResearchCandidateAction({
+      projectId,
+      candidateId: "00000000-0000-4000-8000-0000000000aa",
+      action: "accept",
+      operationId: "op",
+      correlationId: "00000000-0000-4000-8000-000000000099",
+      expectedSectionVersion: 1,
+    });
+    expect(result.ok).toBe(true);
+    expect(acceptResearchCandidate).toHaveBeenCalledOnce();
   });
 
   it("maps session expiry to exact onboarding return path", async () => {

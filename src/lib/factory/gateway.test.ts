@@ -354,3 +354,265 @@ describe("Factory gateway client", () => {
     }
   });
 });
+
+describe("Factory research gateway", () => {
+  const projectId = "00000000-0000-4000-8000-000000000013";
+  const candidateId = "00000000-0000-4000-8000-0000000000aa";
+  const runId = "00000000-0000-4000-8000-0000000000bb";
+  const sourceId = "00000000-0000-4000-8000-0000000000cc";
+
+  const researchSuccess = {
+    ok: true,
+    projectId,
+    runs: [
+      {
+        id: runId,
+        kind: "INITIAL_WHOLE_SITE",
+        status: "SUCCEEDED",
+        normalizedUrl: "https://example.com",
+        failureClassification: null,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:01:00.000Z",
+        startedAt: "2026-04-01T00:00:30.000Z",
+        finishedAt: "2026-04-01T00:01:00.000Z",
+      },
+    ],
+    sources: [
+      {
+        id: sourceId,
+        researchRunId: runId,
+        sourceUrl: "https://example.com/about",
+        classification: "DISCOVERED",
+        observedAt: "2026-04-01T00:00:45.000Z",
+        safeMetadata: { title: "About" },
+      },
+    ],
+    candidates: [
+      {
+        id: candidateId,
+        researchRunId: runId,
+        fieldKey: "business.name",
+        extractedValue: "Example Co",
+        derivation: "DISCOVERED",
+        disposition: "PENDING",
+        advisoryConfidence: 0.8,
+        observedAt: "2026-04-01T00:00:50.000Z",
+        sourceIds: [sourceId],
+      },
+    ],
+  };
+
+  const acceptSuccess = {
+    ok: true,
+    replayed: false,
+    projectId,
+    candidateId,
+    disposition: "ACCEPTED",
+    fieldKey: "business.name",
+    sectionKey: "BUSINESS",
+    sectionVersion: 2,
+    answerVersion: 1,
+    completedAt: null,
+  };
+
+  it("GETs project research with exact path and bearer", async () => {
+    const { getProjectResearch } = await import("./gateway");
+    const fetchImpl = mockFetch(new Response(JSON.stringify(researchSuccess), { status: 200 }));
+    const result = await getProjectResearch(projectId, {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`http://127.0.0.1:3001/api/v1/projects/${projectId}/research`);
+    expect(init.method).toBe("GET");
+    expect(init.cache).toBe("no-store");
+    expect(init.headers).toMatchObject({
+      Authorization: "Bearer access-token",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("POSTs accept with exact path and body", async () => {
+    const { acceptResearchCandidate } = await import("./gateway");
+    const fetchImpl = mockFetch(new Response(JSON.stringify(acceptSuccess), { status: 200 }));
+    const body = {
+      operationId: "op-accept",
+      correlationId: "00000000-0000-4000-8000-000000000099",
+      expectedSectionVersion: 1,
+    };
+    const result = await acceptResearchCandidate(projectId, candidateId, body, {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/research/candidates/${candidateId}/accept`,
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(body);
+  });
+
+  it("POSTs edit with exact path and body", async () => {
+    const { editResearchCandidate } = await import("./gateway");
+    const success = { ...acceptSuccess, disposition: "EDITED" };
+    const fetchImpl = mockFetch(new Response(JSON.stringify(success), { status: 200 }));
+    const body = {
+      operationId: "op-edit",
+      correlationId: "00000000-0000-4000-8000-000000000099",
+      expectedSectionVersion: 1,
+      value: "Edited Name",
+    };
+    const result = await editResearchCandidate(projectId, candidateId, body, {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/research/candidates/${candidateId}/edit`,
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(body);
+  });
+
+  it("POSTs reject with exact path and body", async () => {
+    const { rejectResearchCandidate } = await import("./gateway");
+    const success = {
+      ok: true,
+      replayed: false,
+      projectId,
+      candidateId,
+      disposition: "REJECTED",
+    };
+    const fetchImpl = mockFetch(new Response(JSON.stringify(success), { status: 200 }));
+    const body = {
+      operationId: "op-reject",
+      correlationId: "00000000-0000-4000-8000-000000000099",
+    };
+    const result = await rejectResearchCandidate(projectId, candidateId, body, {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/research/candidates/${candidateId}/reject`,
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(body);
+  });
+
+  it("rejects malformed research success as internal_error", async () => {
+    const { getProjectResearch } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(JSON.stringify({ ok: true, projectId: "bad" }), { status: 200 }),
+    );
+    const result = await getProjectResearch(projectId, {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.category).toBe("internal_error");
+  });
+
+  it("preserves already_completed category", async () => {
+    const { acceptResearchCandidate } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error: { category: "already_completed", message: "Done" },
+        }),
+        { status: 409 },
+      ),
+    );
+    const result = await acceptResearchCandidate(
+      projectId,
+      candidateId,
+      {
+        operationId: "op",
+        correlationId: "00000000-0000-4000-8000-000000000099",
+        expectedSectionVersion: 1,
+      },
+      {
+        fetchImpl,
+        getAccessToken: async () => "access-token",
+        getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.category).toBe("already_completed");
+  });
+
+  it("preserves temporary_failure and stale_or_conflicting", async () => {
+    const { acceptResearchCandidate } = await import("./gateway");
+    for (const category of ["temporary_failure", "stale_or_conflicting"] as const) {
+      const fetchImpl = mockFetch(
+        new Response(
+          JSON.stringify({ ok: false, error: { category, message: "x" } }),
+          { status: category === "temporary_failure" ? 503 : 409 },
+        ),
+      );
+      const result = await acceptResearchCandidate(
+        projectId,
+        candidateId,
+        {
+          operationId: "op",
+          correlationId: "00000000-0000-4000-8000-000000000099",
+          expectedSectionVersion: 1,
+        },
+        {
+          fetchImpl,
+          getAccessToken: async () => "access-token",
+          getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+        },
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.category).toBe(category);
+    }
+  });
+
+  it("returns auth_required when no access token", async () => {
+    const { getProjectResearch } = await import("./gateway");
+    const fetchImpl = mockFetch(new Response("{}", { status: 200 }));
+    const result = await getProjectResearch(projectId, {
+      fetchImpl,
+      getAccessToken: async () => null,
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.category).toBe("auth_required");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("maps timeout to temporary_failure", async () => {
+    const { getProjectResearch } = await import("./gateway");
+    const fetchImpl = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      return new Promise((_resolve, reject) => {
+        const signal = init.signal;
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            const error = new Error("Aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        }
+      });
+    });
+    const result = await getProjectResearch(projectId, {
+      fetchImpl,
+      getAccessToken: async () => "access-token",
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+      timeoutMs: 5,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.category).toBe("temporary_failure");
+  });
+});
