@@ -53,7 +53,8 @@ export type ProjectDetailLoadResult =
         | "temporary_failure"
         | "internal_error"
         | "invalid_input"
-        | "stale_or_conflicting";
+        | "stale_or_conflicting"
+        | "already_completed";
       message: string;
     };
 

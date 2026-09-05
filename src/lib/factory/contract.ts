@@ -7,6 +7,7 @@ export const FACTORY_ERROR_CATEGORIES = [
   "permission_denied",
   "invalid_input",
   "stale_or_conflicting",
+  "already_completed",
   "temporary_failure",
   "internal_error",
 ] as const;
@@ -202,6 +203,8 @@ export function mapFactoryCategoryToUserMessage(
       return "The service is temporarily unavailable. Please try again.";
     case "stale_or_conflicting":
       return "This project was updated elsewhere. Reload the saved version before continuing.";
+    case "already_completed":
+      return "This finding was already handled. Refresh the latest project state.";
     case "invalid_input":
       return "Some information could not be accepted. Review your answers and try again.";
     case "permission_denied":
@@ -212,3 +215,136 @@ export function mapFactoryCategoryToUserMessage(
       return "Something went wrong. Please try again later.";
   }
 }
+
+export const RESEARCH_RUN_KINDS = [
+  "INITIAL_WHOLE_SITE",
+  "PUBLIC_LINK_IMPORT",
+  "GENERAL_RESEARCH",
+] as const;
+
+export const RESEARCH_RUN_STATUSES = [
+  "QUEUED",
+  "RUNNING",
+  "SUCCEEDED",
+  "PARTIAL",
+  "FAILED",
+] as const;
+
+export const RESEARCH_SOURCE_CLASSIFICATIONS = ["DISCOVERED", "IMPORTED"] as const;
+
+export const RESEARCH_CANDIDATE_DERIVATIONS = [
+  "DISCOVERED",
+  "IMPORTED",
+  "AI_DERIVED",
+] as const;
+
+export const RESEARCH_CANDIDATE_DISPOSITIONS = [
+  "PENDING",
+  "ACCEPTED",
+  "EDITED",
+  "REJECTED",
+  "SUPERSEDED",
+] as const;
+
+export const researchRunSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(RESEARCH_RUN_KINDS),
+  status: z.enum(RESEARCH_RUN_STATUSES),
+  normalizedUrl: z.string().nullable(),
+  failureClassification: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+});
+
+export const researchSourceSchema = z.object({
+  id: z.string().uuid(),
+  researchRunId: z.string().uuid(),
+  sourceUrl: z.string(),
+  classification: z.enum(RESEARCH_SOURCE_CLASSIFICATIONS),
+  observedAt: z.string(),
+  safeMetadata: z.record(z.string(), z.unknown()),
+});
+
+export const researchCandidateSchema = z.object({
+  id: z.string().uuid(),
+  researchRunId: z.string().uuid(),
+  fieldKey: z.string().nullable(),
+  extractedValue: z.unknown(),
+  derivation: z.enum(RESEARCH_CANDIDATE_DERIVATIONS),
+  disposition: z.enum(RESEARCH_CANDIDATE_DISPOSITIONS),
+  advisoryConfidence: z.number().nullable(),
+  observedAt: z.string(),
+  sourceIds: z.array(z.string().uuid()),
+});
+
+export const getProjectResearchSuccessSchema = z.object({
+  ok: z.literal(true),
+  projectId: z.string().uuid(),
+  runs: z.array(researchRunSchema),
+  sources: z.array(researchSourceSchema),
+  candidates: z.array(researchCandidateSchema),
+});
+
+export type ProjectResearchState = z.infer<typeof getProjectResearchSuccessSchema>;
+export type ResearchRun = z.infer<typeof researchRunSchema>;
+export type ResearchSource = z.infer<typeof researchSourceSchema>;
+export type ResearchCandidate = z.infer<typeof researchCandidateSchema>;
+
+export const acceptResearchCandidateRequestSchema = z.object({
+  operationId: z.string().min(1).max(128),
+  correlationId: z.string().uuid(),
+  expectedSectionVersion: z.number().int().nonnegative(),
+});
+
+export type AcceptResearchCandidateRequest = z.infer<
+  typeof acceptResearchCandidateRequestSchema
+>;
+
+export const editResearchCandidateRequestSchema =
+  acceptResearchCandidateRequestSchema.extend({
+    value: z.unknown(),
+  });
+
+export type EditResearchCandidateRequest = z.infer<
+  typeof editResearchCandidateRequestSchema
+>;
+
+export const rejectResearchCandidateRequestSchema = z.object({
+  operationId: z.string().min(1).max(128),
+  correlationId: z.string().uuid(),
+});
+
+export type RejectResearchCandidateRequest = z.infer<
+  typeof rejectResearchCandidateRequestSchema
+>;
+
+export const reconcileResearchCandidateSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  candidateId: z.string().uuid(),
+  disposition: z.enum(["ACCEPTED", "EDITED"]),
+  fieldKey: z.string().min(1),
+  sectionKey: z.enum(ONBOARDING_SECTION_KEYS),
+  sectionVersion: z.number().int().positive(),
+  answerVersion: z.number().int().positive(),
+  completedAt: z.string().nullable(),
+});
+
+export type ReconcileResearchCandidateSuccess = z.infer<
+  typeof reconcileResearchCandidateSuccessSchema
+>;
+
+export const rejectResearchCandidateSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  candidateId: z.string().uuid(),
+  disposition: z.literal("REJECTED"),
+});
+
+export type RejectResearchCandidateSuccess = z.infer<
+  typeof rejectResearchCandidateSuccessSchema
+>;

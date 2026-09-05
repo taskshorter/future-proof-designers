@@ -2,22 +2,34 @@ import "server-only";
 
 import { getServerEnv } from "@/lib/env/get-server-env";
 import {
+  acceptResearchCandidateRequestSchema,
+  editResearchCandidateRequestSchema,
   factoryErrorResponseSchema,
   getProjectOnboardingSuccessSchema,
+  getProjectResearchSuccessSchema,
   projectResumeDetailSuccessSchema,
   projectResumeListSuccessSchema,
   projectStartRequestSchema,
   projectStartSuccessSchema,
+  reconcileResearchCandidateSuccessSchema,
+  rejectResearchCandidateRequestSchema,
+  rejectResearchCandidateSuccessSchema,
   saveProjectOnboardingSectionRequestSchema,
   saveProjectOnboardingSectionSuccessSchema,
+  type AcceptResearchCandidateRequest,
+  type EditResearchCandidateRequest,
   type FactoryErrorCategory,
   type FactoryGatewayResult,
   type OnboardingSectionKey,
   type ProjectOnboardingState,
+  type ProjectResearchState,
   type ProjectResumeDetail,
   type ProjectStartRequest,
   type ProjectStartSuccess,
   type ProjectResumeSummary,
+  type ReconcileResearchCandidateSuccess,
+  type RejectResearchCandidateRequest,
+  type RejectResearchCandidateSuccess,
   type SaveProjectOnboardingSectionRequest,
   type SaveProjectOnboardingSectionSuccess,
 } from "./contract";
@@ -200,5 +212,71 @@ export async function saveProjectOnboardingSection(
     },
     deps,
     (payload) => saveProjectOnboardingSectionSuccessSchema.parse(payload),
+  );
+}
+
+export async function getProjectResearch(
+  projectId: string,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ProjectResearchState>> {
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/research`,
+    { method: "GET" },
+    deps,
+    (payload) => getProjectResearchSuccessSchema.parse(payload),
+  );
+}
+
+export async function acceptResearchCandidate(
+  projectId: string,
+  candidateId: string,
+  request: AcceptResearchCandidateRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ReconcileResearchCandidateSuccess>> {
+  const normalized = acceptResearchCandidateRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/research/candidates/${encodeURIComponent(candidateId)}/accept`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => reconcileResearchCandidateSuccessSchema.parse(payload),
+  );
+}
+
+export async function editResearchCandidate(
+  projectId: string,
+  candidateId: string,
+  request: EditResearchCandidateRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ReconcileResearchCandidateSuccess>> {
+  const normalized = editResearchCandidateRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/research/candidates/${encodeURIComponent(candidateId)}/edit`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => reconcileResearchCandidateSuccessSchema.parse(payload),
+  );
+}
+
+export async function rejectResearchCandidate(
+  projectId: string,
+  candidateId: string,
+  request: RejectResearchCandidateRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<RejectResearchCandidateSuccess>> {
+  const normalized = rejectResearchCandidateRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/research/candidates/${encodeURIComponent(candidateId)}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => rejectResearchCandidateSuccessSchema.parse(payload),
   );
 }

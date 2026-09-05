@@ -22,6 +22,15 @@ vi.mock("@/lib/onboarding/actions", () => ({
     saveOnboardingSectionAction(...args),
   reloadProjectOnboardingAction: (...args: unknown[]) =>
     reloadProjectOnboardingAction(...args),
+  refreshProjectResearchAction: vi.fn(),
+  reloadAuthoritativeOnboardingAndResearchAction: vi.fn(),
+  reconcileResearchCandidateAction: vi.fn(),
+}));
+
+vi.mock("./ResearchFindingsPanel", () => ({
+  ResearchFindingsPanel: (_props: { onAuthoritativeSyncBusyChange?: (busy: boolean) => void }) => (
+    <div data-testid="research-findings-panel">Research findings</div>
+  ),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -47,6 +56,17 @@ import { DeeperOnboardingFlow, buildSavePayload } from "./DeeperOnboardingFlow";
 import { fieldByKey } from "@/lib/onboarding/field-ui";
 
 const projectId = "00000000-0000-4000-8000-000000000013";
+
+const emptyResearch = {
+  status: "ready" as const,
+  data: {
+    ok: true as const,
+    projectId,
+    runs: [],
+    sources: [],
+    candidates: [],
+  },
+};
 
 function emptySections(
   overrides: Partial<
@@ -141,6 +161,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -151,13 +172,15 @@ describe("DeeperOnboardingFlow", () => {
     expect(screen.getByText("What you've already told us")).toBeInTheDocument();
     expect(screen.getByText("Taco Shop")).toBeInTheDocument();
     expect(screen.getByText("want to sell more tacos")).toBeInTheDocument();
-    expect(screen.queryByText(/research|candidate|upload|B3/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("research-findings-panel")).toBeInTheDocument();
+    expect(screen.queryByText(/upload|B3/i)).not.toBeInTheDocument();
   });
 
   it("hydrates saved answers and opens the first incomplete section", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(true)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -197,6 +220,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -225,6 +249,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -249,6 +274,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -274,6 +300,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -320,6 +347,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -346,6 +374,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -375,6 +404,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -420,6 +450,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -457,6 +488,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -479,6 +511,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(true)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -500,6 +533,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -535,6 +569,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -561,6 +596,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -606,11 +642,13 @@ describe("DeeperOnboardingFlow", () => {
           },
         ],
       }),
+      research: emptyResearch,
     });
 
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -641,6 +679,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -671,6 +710,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -728,6 +768,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -784,6 +825,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -844,6 +886,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -900,6 +943,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -1016,6 +1060,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -1056,6 +1101,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -1083,6 +1129,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -1129,6 +1176,7 @@ describe("DeeperOnboardingFlow", () => {
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
+        research={emptyResearch}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}

@@ -322,6 +322,55 @@ button:focus-visible {
   border: 0;
 }
 
+.research-findings {
+  display: grid;
+  gap: 1rem;
+}
+
+.research-status-row {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.research-field-group,
+.research-candidate,
+.research-edit {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.research-candidate {
+  padding: 0.75rem 0;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.research-candidate.reviewed {
+  opacity: 0.85;
+}
+
+.research-conflict {
+  margin: 0;
+}
+
+.research-source-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.research-source-list a {
+  overflow-wrap: anywhere;
+}
+
+.research-reviewed summary {
+  cursor: pointer;
+}
+
 @media (max-width: 40rem) {
   .repeatable-row {
     grid-template-columns: 1fr;
