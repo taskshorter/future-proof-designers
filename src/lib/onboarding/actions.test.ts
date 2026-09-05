@@ -238,4 +238,21 @@ describe("onboarding actions", () => {
     expect(result.ok).toBe(true);
     expect(saveProjectOnboardingSection).toHaveBeenCalledOnce();
   });
+
+  it("rejects invalid runtime reconcile action without gateway mutation", async () => {
+    const result = await reconcileResearchCandidateAction({
+      projectId,
+      candidateId: "00000000-0000-4000-8000-0000000000aa",
+      action: "tampered-reject" as never,
+      operationId: "op-bad",
+      correlationId: "00000000-0000-4000-8000-000000000099",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.category).toBe("invalid_input");
+    }
+    expect(acceptResearchCandidate).not.toHaveBeenCalled();
+    expect(editResearchCandidate).not.toHaveBeenCalled();
+    expect(rejectResearchCandidate).not.toHaveBeenCalled();
+  });
 });

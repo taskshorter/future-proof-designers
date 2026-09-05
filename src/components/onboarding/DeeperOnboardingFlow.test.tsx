@@ -28,7 +28,7 @@ vi.mock("@/lib/onboarding/actions", () => ({
 }));
 
 vi.mock("./ResearchFindingsPanel", () => ({
-  ResearchFindingsPanel: () => (
+  ResearchFindingsPanel: (_props: { onAuthoritativeSyncBusyChange?: (busy: boolean) => void }) => (
     <div data-testid="research-findings-panel">Research findings</div>
   ),
 }));

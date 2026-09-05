@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import React, { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -34,7 +35,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
 }));
 
-import { ResearchFindingsPanel } from "./ResearchFindingsPanel";
+import {
+  ResearchFindingsPanel,
+  researchReconcileIntentKey,
+} from "./ResearchFindingsPanel";
 
 const projectId = "00000000-0000-4000-8000-000000000013";
 const runId = "00000000-0000-4000-8000-0000000000bb";
@@ -120,12 +124,14 @@ describe("ResearchFindingsPanel", () => {
   const getSectionVersion = vi.fn(() => 3);
   const onAuthoritativeState = vi.fn();
   const onNotice = vi.fn();
+  const onAuthoritativeSyncBusyChange = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
     flushBeforeReconcile.mockResolvedValue(true);
     getSectionVersion.mockReturnValue(3);
+    onAuthoritativeSyncBusyChange.mockClear();
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "visible",
@@ -150,6 +156,7 @@ describe("ResearchFindingsPanel", () => {
         flushBeforeReconcile={flushBeforeReconcile}
         onAuthoritativeState={onAuthoritativeState}
         onNotice={onNotice}
+        onAuthoritativeSyncBusyChange={onAuthoritativeSyncBusyChange}
       />,
     );
   }
@@ -508,6 +515,7 @@ describe("ResearchFindingsPanel", () => {
         flushBeforeReconcile={flushBeforeReconcile}
         onAuthoritativeState={onAuthoritativeState}
         onNotice={onNotice}
+        onAuthoritativeSyncBusyChange={onAuthoritativeSyncBusyChange}
       />,
     );
 
@@ -553,5 +561,232 @@ describe("ResearchFindingsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(flushBeforeReconcile).toHaveBeenCalled());
     expect(reconcileResearchCandidateAction).not.toHaveBeenCalled();
+    expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(true);
+    await waitFor(() =>
+      expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(false),
+    );
+  });
+
+  it("locks authoritative sync before flush and unlocks after accept reload", async () => {
+    let resolveFlush: (value: boolean) => void = () => undefined;
+    flushBeforeReconcile.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveFlush = resolve;
+        }),
+    );
+    reconcileResearchCandidateAction.mockResolvedValue({
+      ok: true,
+      reconcile: {
+        ok: true,
+        replayed: false,
+        projectId,
+        candidateId,
+        disposition: "ACCEPTED",
+        fieldKey: "business.name",
+        sectionKey: "BUSINESS",
+        sectionVersion: 4,
+        answerVersion: 1,
+        completedAt: null,
+      },
+      onboarding: makeOnboarding(),
+      research: makeResearch({
+        candidates: [makeCandidate({ disposition: "ACCEPTED" })],
+      }),
+    });
+
+    function LockHarness() {
+      const [busy, setBusy] = useState(false);
+      return (
+        <div>
+          <input data-testid="manual-field" disabled={busy} defaultValue="draft" />
+          <button type="button" data-testid="manual-nav" disabled={busy}>
+            Continue
+          </button>
+          <ResearchFindingsPanel
+            projectId={projectId}
+            research={makeResearch()}
+            activeSection="BUSINESS"
+            getSectionVersion={getSectionVersion}
+            flushBeforeReconcile={flushBeforeReconcile}
+            onAuthoritativeState={onAuthoritativeState}
+            onNotice={onNotice}
+            onAuthoritativeSyncBusyChange={setBusy}
+          />
+        </div>
+      );
+    }
+
+    render(<LockHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await waitFor(() => expect(flushBeforeReconcile).toHaveBeenCalled());
+    expect(screen.getByTestId("manual-field")).toBeDisabled();
+    expect(screen.getByTestId("manual-nav")).toBeDisabled();
+    expect(reconcileResearchCandidateAction).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveFlush(true);
+    });
+    await waitFor(() => expect(reconcileResearchCandidateAction).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByTestId("manual-field")).not.toBeDisabled());
+    expect(onAuthoritativeState).toHaveBeenCalled();
+  });
+
+  it("Refresh findings flushes first and skips reload when flush fails", async () => {
+    flushBeforeReconcile.mockResolvedValue(false);
+    renderPanel(makeResearch());
+    fireEvent.click(screen.getByRole("button", { name: /Refresh findings/i }));
+    await waitFor(() => expect(flushBeforeReconcile).toHaveBeenCalledOnce());
+    expect(reloadAuthoritativeOnboardingAndResearchAction).not.toHaveBeenCalled();
+    expect(onNotice).toHaveBeenCalledWith(
+      "Save your current onboarding edits before refreshing findings.",
+      "error",
+    );
+  });
+
+  it("Refresh findings reloads only after successful flush while locked", async () => {
+    const order: string[] = [];
+    let resolveFlush: (value: boolean) => void = () => undefined;
+    flushBeforeReconcile.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          order.push("flush-start");
+          resolveFlush = (value) => {
+            order.push("flush-done");
+            resolve(value);
+          };
+        }),
+    );
+    reloadAuthoritativeOnboardingAndResearchAction.mockImplementation(async () => {
+      order.push("reload");
+      return {
+        ok: true,
+        onboarding: makeOnboarding(),
+        research: makeResearch(),
+      };
+    });
+
+    renderPanel(makeResearch());
+    fireEvent.click(screen.getByRole("button", { name: /Refresh findings/i }));
+    await waitFor(() => expect(flushBeforeReconcile).toHaveBeenCalled());
+    expect(reloadAuthoritativeOnboardingAndResearchAction).not.toHaveBeenCalled();
+    expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      resolveFlush(true);
+    });
+    await waitFor(() =>
+      expect(reloadAuthoritativeOnboardingAndResearchAction).toHaveBeenCalledOnce(),
+    );
+    expect(order).toEqual(["flush-start", "flush-done", "reload"]);
+    await waitFor(() =>
+      expect(onAuthoritativeSyncBusyChange).toHaveBeenCalledWith(false),
+    );
+  });
+
+  it("reuses identity for same accept version and creates new identity when version changes", async () => {
+    reconcileResearchCandidateAction.mockResolvedValue({
+      ok: false,
+      category: "temporary_failure",
+      message: "Temporary",
+    });
+    getSectionVersion.mockReturnValue(3);
+    renderPanel(makeResearch());
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(reconcileResearchCandidateAction).toHaveBeenCalledOnce());
+    const first = reconcileResearchCandidateAction.mock.calls[0]![0] as {
+      operationId: string;
+      correlationId: string;
+      expectedSectionVersion: number;
+    };
+    expect(first.expectedSectionVersion).toBe(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(reconcileResearchCandidateAction).toHaveBeenCalledTimes(2));
+    const second = reconcileResearchCandidateAction.mock.calls[1]![0] as {
+      operationId: string;
+      correlationId: string;
+    };
+    expect(second.operationId).toBe(first.operationId);
+    expect(second.correlationId).toBe(first.correlationId);
+
+    getSectionVersion.mockReturnValue(4);
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(reconcileResearchCandidateAction).toHaveBeenCalledTimes(3));
+    const third = reconcileResearchCandidateAction.mock.calls[2]![0] as {
+      operationId: string;
+      expectedSectionVersion: number;
+    };
+    expect(third.expectedSectionVersion).toBe(4);
+    expect(third.operationId).not.toBe(first.operationId);
+  });
+
+  it("builds intent keys that include CAS version for accept/edit", () => {
+    expect(researchReconcileIntentKey("accept", candidateId, { expectedSectionVersion: 3 })).toBe(
+      `accept:${candidateId}:v3`,
+    );
+    expect(
+      researchReconcileIntentKey("accept", candidateId, { expectedSectionVersion: 4 }),
+    ).not.toBe(researchReconcileIntentKey("accept", candidateId, { expectedSectionVersion: 3 }));
+    expect(
+      researchReconcileIntentKey("edit", candidateId, {
+        expectedSectionVersion: 3,
+        value: "A",
+      }),
+    ).not.toBe(
+      researchReconcileIntentKey("edit", candidateId, {
+        expectedSectionVersion: 3,
+        value: "B",
+      }),
+    );
+    expect(researchReconcileIntentKey("reject", candidateId)).toBe(`reject:${candidateId}`);
+  });
+
+  it("does not reset the 5-second poll window on unrelated callback rerenders", async () => {
+    vi.useFakeTimers();
+    refreshProjectResearchAction.mockResolvedValue({
+      ok: true,
+      research: makeResearch({ status: "RUNNING" }),
+    });
+
+    const research = makeResearch({ status: "RUNNING" });
+    const { rerender } = render(
+      <ResearchFindingsPanel
+        projectId={projectId}
+        research={research}
+        activeSection="BUSINESS"
+        getSectionVersion={getSectionVersion}
+        flushBeforeReconcile={flushBeforeReconcile}
+        onAuthoritativeState={onAuthoritativeState}
+        onNotice={onNotice}
+        onAuthoritativeSyncBusyChange={onAuthoritativeSyncBusyChange}
+      />,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(refreshProjectResearchAction).not.toHaveBeenCalled();
+
+    // Unrelated parent callback identity changes mid-interval
+    rerender(
+      <ResearchFindingsPanel
+        projectId={projectId}
+        research={research}
+        activeSection="BUSINESS"
+        getSectionVersion={getSectionVersion}
+        flushBeforeReconcile={flushBeforeReconcile}
+        onAuthoritativeState={() => undefined}
+        onNotice={() => undefined}
+        onAuthoritativeSyncBusyChange={() => undefined}
+      />,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(refreshProjectResearchAction).toHaveBeenCalledTimes(1);
   });
 });

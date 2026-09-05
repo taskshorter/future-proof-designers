@@ -25,6 +25,11 @@ import {
   saveProjectOnboardingSection,
 } from "@/lib/factory/gateway";
 import { getVerifiedAccessToken } from "@/lib/supabase/server";
+import {
+  isReconcileResearchAction,
+} from "@/lib/onboarding/reconcile-action";
+
+export type { ReconcileResearchAction } from "@/lib/onboarding/reconcile-action";
 
 export type ResearchLoadState =
   | { status: "ready"; data: ProjectResearchState }
@@ -81,8 +86,6 @@ export type AuthoritativeReloadResult =
       message: string;
       signInPath?: string;
     };
-
-export type ReconcileResearchAction = "accept" | "edit" | "reject";
 
 export type ReconcileResearchCandidateResult =
   | {
@@ -331,7 +334,7 @@ export async function reloadAuthoritativeOnboardingAndResearchAction(
 export async function reconcileResearchCandidateAction(input: {
   projectId: string;
   candidateId: string;
-  action: ReconcileResearchAction;
+  action: string;
   operationId: string;
   correlationId: string;
   expectedSectionVersion?: number;
@@ -348,13 +351,22 @@ export async function reconcileResearchCandidateAction(input: {
     };
   }
 
+  if (!isReconcileResearchAction(input.action)) {
+    return {
+      ok: false,
+      category: "invalid_input",
+      message: mapFactoryCategoryToUserMessage("invalid_input"),
+    };
+  }
+
+  const action = input.action;
   const deps = await gatewayDeps();
   let mutateResult:
     | Awaited<ReturnType<typeof acceptResearchCandidate>>
     | Awaited<ReturnType<typeof editResearchCandidate>>
     | Awaited<ReturnType<typeof rejectResearchCandidate>>;
 
-  if (input.action === "accept") {
+  if (action === "accept") {
     if (
       typeof input.expectedSectionVersion !== "number" ||
       !Number.isInteger(input.expectedSectionVersion) ||
@@ -376,7 +388,7 @@ export async function reconcileResearchCandidateAction(input: {
       },
       deps,
     );
-  } else if (input.action === "edit") {
+  } else if (action === "edit") {
     if (
       typeof input.expectedSectionVersion !== "number" ||
       !Number.isInteger(input.expectedSectionVersion) ||
@@ -406,7 +418,7 @@ export async function reconcileResearchCandidateAction(input: {
       },
       deps,
     );
-  } else {
+  } else if (action === "reject") {
     mutateResult = await rejectResearchCandidate(
       input.projectId,
       input.candidateId,
@@ -416,6 +428,12 @@ export async function reconcileResearchCandidateAction(input: {
       },
       deps,
     );
+  } else {
+    return {
+      ok: false,
+      category: "invalid_input",
+      message: mapFactoryCategoryToUserMessage("invalid_input"),
+    };
   }
 
   if (!mutateResult.ok) {

@@ -241,6 +241,7 @@ export function DeeperOnboardingFlow({
   const router = useRouter();
   const [sections, setSections] = useState(() => hydrateFromOnboarding(onboarding));
   const [research, setResearch] = useState<ResearchLoadState>(initialResearch);
+  const [authoritativeSyncBusy, setAuthoritativeSyncBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<OnboardingSectionKey>(() =>
     initialActiveSection(onboarding.sections),
   );
@@ -274,6 +275,7 @@ export function DeeperOnboardingFlow({
 
   const active = sections[activeSection];
   const dirty = !valuesEqual(active.values, active.savedValues);
+  const onboardingInteractionLocked = active.conflict || authoritativeSyncBusy;
 
   const visibleFields = useMemo(() => {
     return fieldsForSection(activeSection).filter((field) =>
@@ -593,6 +595,9 @@ export function DeeperOnboardingFlow({
   ]);
 
   const updateField = (fieldKey: string, value: unknown) => {
+    if (authoritativeSyncBusy) {
+      return;
+    }
     setSections((current) => {
       const nextSection = {
         ...current[activeSection],
@@ -619,7 +624,7 @@ export function DeeperOnboardingFlow({
 
   const flushAndNavigate = async (nextSection: OnboardingSectionKey) => {
     clearTimer();
-    if (active.conflict) return;
+    if (active.conflict || authoritativeSyncBusy) return;
     if (dirty || inFlightRef.current[activeSection] || drainingRef.current[activeSection]) {
       const nextStatus =
         sectionsRef.current[activeSection].status === "COMPLETE"
@@ -641,6 +646,7 @@ export function DeeperOnboardingFlow({
 
   const handleContinue = async () => {
     clearTimer();
+    if (authoritativeSyncBusy || active.conflict) return;
     const ok = await persistSection(activeSection, "COMPLETE");
     if (!ok) return;
     const latest = sectionsRef.current[activeSection];
@@ -722,6 +728,7 @@ export function DeeperOnboardingFlow({
   };
 
   const handleRetry = async () => {
+    if (authoritativeSyncBusy) return;
     const intent = lastRetryIntent.current;
     if (!intent || intent.sectionKey !== activeSection) return;
     await persistSection(activeSection, intent.snapshot.status);
@@ -775,6 +782,7 @@ export function DeeperOnboardingFlow({
                   : "stage-chip secondary"
               }
               aria-current={sectionKey === activeSection ? "step" : undefined}
+              disabled={onboardingInteractionLocked}
               onClick={() => {
                 void flushAndNavigate(sectionKey);
               }}
@@ -799,6 +807,7 @@ export function DeeperOnboardingFlow({
         getSectionVersion={(sectionKey) => sectionsRef.current[sectionKey].version}
         flushBeforeReconcile={flushBeforeReconcile}
         onAuthoritativeState={handleAuthoritativeState}
+        onAuthoritativeSyncBusyChange={setAuthoritativeSyncBusy}
         onNotice={(message, tone) => {
           if (tone === "error") {
             setSaveStatus("error");
@@ -820,7 +829,11 @@ export function DeeperOnboardingFlow({
             This project was updated elsewhere. Your unsaved edits for this stage are still
             here, but saving is paused until you reload the saved version.
           </p>
-          <button type="button" onClick={() => void handleReload()}>
+          <button
+            type="button"
+            disabled={authoritativeSyncBusy}
+            onClick={() => void handleReload()}
+          >
             Reload saved version
           </button>
         </div>
@@ -869,6 +882,7 @@ export function DeeperOnboardingFlow({
                 <button
                   type="button"
                   className="secondary"
+                  disabled={onboardingInteractionLocked}
                   onClick={() => void flushAndNavigate(sectionKey)}
                 >
                   Edit
@@ -898,7 +912,7 @@ export function DeeperOnboardingFlow({
               key={field.fieldKey}
               field={field}
               value={active.values[field.fieldKey]}
-              disabled={active.conflict}
+              disabled={onboardingInteractionLocked}
               onChange={(next) => updateField(field.fieldKey, next)}
             />
           ))}
@@ -917,6 +931,7 @@ export function DeeperOnboardingFlow({
             <button
               type="button"
               className="secondary"
+              disabled={onboardingInteractionLocked}
               onClick={() =>
                 setSections((current) => ({
                   ...current,
@@ -935,7 +950,7 @@ export function DeeperOnboardingFlow({
               key={field.fieldKey}
               field={field}
               value={active.values[field.fieldKey]}
-              disabled={active.conflict}
+              disabled={onboardingInteractionLocked}
               onChange={(next) => updateField(field.fieldKey, next)}
             />
           ))}
@@ -947,7 +962,9 @@ export function DeeperOnboardingFlow({
         <button
           type="button"
           className="secondary"
-          disabled={SECTION_ORDER.indexOf(activeSection) === 0}
+          disabled={
+            SECTION_ORDER.indexOf(activeSection) === 0 || onboardingInteractionLocked
+          }
           onClick={() => {
             const index = SECTION_ORDER.indexOf(activeSection);
             if (index > 0) {
@@ -958,14 +975,19 @@ export function DeeperOnboardingFlow({
           Back
         </button>
         {retryable ? (
-          <button type="button" className="secondary" onClick={() => void handleRetry()}>
+          <button
+            type="button"
+            className="secondary"
+            disabled={onboardingInteractionLocked}
+            onClick={() => void handleRetry()}
+          >
             Retry save
           </button>
         ) : null}
         <button
           type="button"
           onClick={() => void handleContinue()}
-          disabled={active.conflict}
+          disabled={onboardingInteractionLocked}
         >
           {activeSection === "REVIEW" ? "Finish onboarding" : "Continue"}
         </button>

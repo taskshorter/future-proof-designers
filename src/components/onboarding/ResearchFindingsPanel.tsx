@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { OnboardingFieldEditor } from "@/components/onboarding/FieldEditors";
@@ -44,6 +44,7 @@ type ResearchFindingsPanelProps = {
     research: ResearchLoadState;
   }) => void;
   onNotice: (message: string, tone?: "info" | "error" | "success") => void;
+  onAuthoritativeSyncBusyChange: (busy: boolean) => void;
 };
 
 type OperationIdentity = {
@@ -53,19 +54,27 @@ type OperationIdentity = {
 
 type IntentKey = string;
 
-function intentKeyFor(
+/** Exported for focused identity tests. */
+export function researchReconcileIntentKey(
   action: ReconcileResearchAction,
   candidateId: string,
-  value?: unknown,
+  options?: {
+    value?: unknown;
+    expectedSectionVersion?: number;
+  },
 ): IntentKey {
-  if (action === "edit") {
-    try {
-      return `${action}:${candidateId}:${JSON.stringify(value)}`;
-    } catch {
-      return `${action}:${candidateId}:${String(value)}`;
-    }
+  if (action === "reject") {
+    return `reject:${candidateId}`;
   }
-  return `${action}:${candidateId}`;
+  const version = options?.expectedSectionVersion;
+  if (action === "accept") {
+    return `accept:${candidateId}:v${String(version)}`;
+  }
+  try {
+    return `edit:${candidateId}:v${String(version)}:${JSON.stringify(options?.value)}`;
+  } catch {
+    return `edit:${candidateId}:v${String(version)}:${String(options?.value)}`;
+  }
 }
 
 function SourceEvidenceList({
@@ -112,6 +121,7 @@ export function ResearchFindingsPanel({
   flushBeforeReconcile,
   onAuthoritativeState,
   onNotice,
+  onAuthoritativeSyncBusyChange,
 }: ResearchFindingsPanelProps) {
   const router = useRouter();
   const [busyCandidateId, setBusyCandidateId] = useState<string | null>(null);
@@ -120,38 +130,63 @@ export function ResearchFindingsPanel({
   const [editError, setEditError] = useState<string | null>(null);
   const [reviewedOpen, setReviewedOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [authorityBusy, setAuthorityBusy] = useState(false);
 
   const identityByIntent = useRef<Map<IntentKey, OperationIdentity>>(new Map());
-  const inFlightRefresh = useRef(false);
+  const inFlightResearchPoll = useRef(false);
   const researchRef = useRef(research);
+  const flushBeforeReconcileRef = useRef(flushBeforeReconcile);
+  const getSectionVersionRef = useRef(getSectionVersion);
+  const onAuthoritativeStateRef = useRef(onAuthoritativeState);
+  const onNoticeRef = useRef(onNotice);
+  const onAuthoritativeSyncBusyChangeRef = useRef(onAuthoritativeSyncBusyChange);
+  const routerRef = useRef(router);
 
   useEffect(() => {
     researchRef.current = research;
   }, [research]);
 
-  const refreshResearchOnly = useCallback(async () => {
-    if (inFlightRefresh.current) return;
-    inFlightRefresh.current = true;
-    setRefreshing(true);
-    try {
-      const result = await refreshProjectResearchAction(projectId);
-      if (!result.ok) {
-        if (result.signInPath) {
-          router.push(result.signInPath);
+  const pollResearchOnlyRef = useRef<() => Promise<void>>(async () => undefined);
+
+  useEffect(() => {
+    flushBeforeReconcileRef.current = flushBeforeReconcile;
+    getSectionVersionRef.current = getSectionVersion;
+    onAuthoritativeStateRef.current = onAuthoritativeState;
+    onNoticeRef.current = onNotice;
+    onAuthoritativeSyncBusyChangeRef.current = onAuthoritativeSyncBusyChange;
+    routerRef.current = router;
+    pollResearchOnlyRef.current = async () => {
+      if (inFlightResearchPoll.current) return;
+      inFlightResearchPoll.current = true;
+      setRefreshing(true);
+      try {
+        const result = await refreshProjectResearchAction(projectId);
+        if (!result.ok) {
+          if (result.signInPath) {
+            routerRef.current.push(result.signInPath);
+            return;
+          }
+          onNoticeRef.current(
+            "Research status could not be refreshed. Manual onboarding is still available.",
+            "info",
+          );
           return;
         }
-        onNotice(
-          "Research status could not be refreshed. Manual onboarding is still available.",
-          "info",
-        );
-        return;
+        onAuthoritativeStateRef.current({ research: result.research });
+      } finally {
+        inFlightResearchPoll.current = false;
+        setRefreshing(false);
       }
-      onAuthoritativeState({ research: result.research });
-    } finally {
-      inFlightRefresh.current = false;
-      setRefreshing(false);
-    }
-  }, [onAuthoritativeState, onNotice, projectId, router]);
+    };
+  });
+
+  const setSyncBusy = (busy: boolean) => {
+    setAuthorityBusy(busy);
+    onAuthoritativeSyncBusyChangeRef.current(busy);
+  };
+
+  const shouldPollResearch =
+    research.status === "ready" && hasActiveResearch(research.data.runs);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +199,13 @@ export function ResearchFindingsPanel({
       }
     };
 
+    if (!shouldPollResearch) {
+      return () => {
+        cancelled = true;
+        stop();
+      };
+    }
+
     const tick = () => {
       if (cancelled) return;
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -174,7 +216,7 @@ export function ResearchFindingsPanel({
         stop();
         return;
       }
-      void refreshResearchOnly();
+      void pollResearchOnlyRef.current();
     };
 
     const start = () => {
@@ -191,7 +233,7 @@ export function ResearchFindingsPanel({
       if (document.visibilityState === "visible") {
         const current = researchRef.current;
         if (current.status === "ready" && hasActiveResearch(current.data.runs)) {
-          void refreshResearchOnly().then(() => {
+          void pollResearchOnlyRef.current().then(() => {
             if (!cancelled) start();
           });
         }
@@ -207,14 +249,14 @@ export function ResearchFindingsPanel({
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [research, refreshResearchOnly]);
+  }, [shouldPollResearch, projectId]);
 
   const getIdentity = (
     action: ReconcileResearchAction,
     candidateId: string,
-    value?: unknown,
+    options?: { value?: unknown; expectedSectionVersion?: number },
   ): OperationIdentity => {
-    const key = intentKeyFor(action, candidateId, value);
+    const key = researchReconcileIntentKey(action, candidateId, options);
     const existing = identityByIntent.current.get(key);
     if (existing) return existing;
     const created = {
@@ -228,9 +270,11 @@ export function ResearchFindingsPanel({
   const clearIdentity = (
     action: ReconcileResearchAction,
     candidateId: string,
-    value?: unknown,
+    options?: { value?: unknown; expectedSectionVersion?: number },
   ) => {
-    identityByIntent.current.delete(intentKeyFor(action, candidateId, value));
+    identityByIntent.current.delete(
+      researchReconcileIntentKey(action, candidateId, options),
+    );
   };
 
   const runReconcile = async (input: {
@@ -238,14 +282,19 @@ export function ResearchFindingsPanel({
     candidate: ResearchCandidate;
     value?: unknown;
   }) => {
-    if (busyCandidateId) return;
+    if (busyCandidateId || authorityBusy) return;
     setBusyCandidateId(input.candidate.id);
     setEditError(null);
+    setSyncBusy(true);
+
+    let identityOptions:
+      | { value?: unknown; expectedSectionVersion?: number }
+      | undefined;
 
     try {
-      const flushed = await flushBeforeReconcile();
+      const flushed = await flushBeforeReconcileRef.current();
       if (!flushed) {
-        onNotice(
+        onNoticeRef.current(
           "Save your current onboarding edits before confirming this finding.",
           "error",
         );
@@ -258,16 +307,27 @@ export function ResearchFindingsPanel({
           ? fieldByKey(input.candidate.fieldKey)
           : undefined;
         if (!field) {
-          onNotice("This finding cannot be confirmed into onboarding.", "error");
+          onNoticeRef.current(
+            "This finding cannot be confirmed into onboarding.",
+            "error",
+          );
           return;
         }
-        expectedSectionVersion = getSectionVersion(field.sectionKey);
+        expectedSectionVersion = getSectionVersionRef.current(field.sectionKey);
       }
+
+      identityOptions =
+        input.action === "reject"
+          ? undefined
+          : {
+              expectedSectionVersion,
+              value: input.action === "edit" ? input.value : undefined,
+            };
 
       const identity = getIdentity(
         input.action,
         input.candidate.id,
-        input.action === "edit" ? input.value : undefined,
+        identityOptions,
       );
 
       const result = await reconcileResearchCandidateAction({
@@ -282,55 +342,47 @@ export function ResearchFindingsPanel({
 
       if (!result.ok) {
         if (result.signInPath) {
-          router.push(result.signInPath);
+          routerRef.current.push(result.signInPath);
           return;
         }
 
         if (result.onboarding || result.research) {
-          onAuthoritativeState({
+          onAuthoritativeStateRef.current({
             onboarding: result.onboarding,
-            research: result.research ?? research,
+            research: result.research ?? researchRef.current,
           });
         }
 
         if (result.category === "temporary_failure") {
-          onNotice(result.message, "error");
+          onNoticeRef.current(result.message, "error");
           return;
         }
 
-        clearIdentity(
-          input.action,
-          input.candidate.id,
-          input.action === "edit" ? input.value : undefined,
-        );
+        clearIdentity(input.action, input.candidate.id, identityOptions);
 
         if (result.category === "already_completed") {
-          onNotice(result.message, "info");
+          onNoticeRef.current(result.message, "info");
           setEditingCandidateId(null);
           return;
         }
 
         if (result.category === "stale_or_conflicting") {
-          onNotice(result.message, "error");
+          onNoticeRef.current(result.message, "error");
           setEditingCandidateId(null);
           return;
         }
 
-        onNotice(result.message, "error");
+        onNoticeRef.current(result.message, "error");
         return;
       }
 
-      clearIdentity(
-        input.action,
-        input.candidate.id,
-        input.action === "edit" ? input.value : undefined,
-      );
-      onAuthoritativeState({
+      clearIdentity(input.action, input.candidate.id, identityOptions);
+      onAuthoritativeStateRef.current({
         onboarding: result.onboarding,
         research: result.research,
       });
       setEditingCandidateId(null);
-      onNotice(
+      onNoticeRef.current(
         input.action === "reject"
           ? "Finding dismissed."
           : "Finding confirmed into onboarding.",
@@ -338,43 +390,49 @@ export function ResearchFindingsPanel({
       );
     } finally {
       setBusyCandidateId(null);
+      setSyncBusy(false);
     }
   };
 
   const handleManualRefresh = async () => {
-    if (inFlightRefresh.current) return;
-    inFlightRefresh.current = true;
+    if (inFlightResearchPoll.current || authorityBusy || busyCandidateId) return;
+    setSyncBusy(true);
     setRefreshing(true);
     try {
+      const flushed = await flushBeforeReconcileRef.current();
+      if (!flushed) {
+        onNoticeRef.current(
+          "Save your current onboarding edits before refreshing findings.",
+          "error",
+        );
+        return;
+      }
+
       const result = await reloadAuthoritativeOnboardingAndResearchAction(projectId);
       if (!result.ok) {
         if (result.signInPath) {
-          router.push(result.signInPath);
+          routerRef.current.push(result.signInPath);
           return;
         }
-        // Fall back to research-only refresh so manual onboarding stays usable
-        const researchOnly = await refreshProjectResearchAction(projectId);
-        if (researchOnly.ok) {
-          onAuthoritativeState({ research: researchOnly.research });
-        }
-        onNotice(
+        onNoticeRef.current(
           "Could not fully refresh. Manual onboarding is still available.",
           "info",
         );
         return;
       }
-      onAuthoritativeState({
+      onAuthoritativeStateRef.current({
         onboarding: result.onboarding,
         research: result.research,
       });
-      onNotice("Findings refreshed.", "info");
+      onNoticeRef.current("Findings refreshed.", "info");
     } finally {
-      inFlightRefresh.current = false;
       setRefreshing(false);
+      setSyncBusy(false);
     }
   };
 
   const startEdit = (candidate: ResearchCandidate) => {
+    if (authorityBusy || busyCandidateId) return;
     setEditingCandidateId(candidate.id);
     setEditValue(candidate.extractedValue);
     setEditError(null);
@@ -383,7 +441,7 @@ export function ResearchFindingsPanel({
   const submitEdit = async (candidate: ResearchCandidate) => {
     const field = candidate.fieldKey ? fieldByKey(candidate.fieldKey) : undefined;
     if (!field) {
-      onNotice("This finding cannot be edited into onboarding.", "error");
+      onNoticeRef.current("This finding cannot be edited into onboarding.", "error");
       return;
     }
     if (isFieldValueEmpty(editValue)) {
@@ -422,6 +480,7 @@ export function ResearchFindingsPanel({
   const reviewUnmapped =
     activeSection === "REVIEW" ? unmappedPendingCandidates(candidates) : [];
   const reviewed = reviewedCandidates(candidates);
+  const controlsBusy = authorityBusy || busyCandidateId !== null;
 
   return (
     <section className="panel research-findings" aria-label="Research findings">
@@ -462,7 +521,7 @@ export function ResearchFindingsPanel({
         <button
           type="button"
           className="secondary"
-          disabled={refreshing || busyCandidateId !== null}
+          disabled={controlsBusy || refreshing}
           onClick={() => void handleManualRefresh()}
         >
           {refreshing ? "Refreshing…" : "Refresh findings"}
@@ -502,14 +561,14 @@ export function ResearchFindingsPanel({
                     <OnboardingFieldEditor
                       field={field}
                       value={editValue}
-                      disabled={busyCandidateId === candidate.id}
+                      disabled={controlsBusy}
                       onChange={setEditValue}
                     />
                     {editError ? <p className="form-error">{editError}</p> : null}
                     <div className="button-row">
                       <button
                         type="button"
-                        disabled={busyCandidateId === candidate.id}
+                        disabled={controlsBusy}
                         onClick={() => void submitEdit(candidate)}
                       >
                         Save edited value
@@ -517,7 +576,7 @@ export function ResearchFindingsPanel({
                       <button
                         type="button"
                         className="secondary"
-                        disabled={busyCandidateId === candidate.id}
+                        disabled={controlsBusy}
                         onClick={() => {
                           setEditingCandidateId(null);
                           setEditError(null);
@@ -531,7 +590,7 @@ export function ResearchFindingsPanel({
                   <div className="button-row">
                     <button
                       type="button"
-                      disabled={busyCandidateId !== null}
+                      disabled={controlsBusy}
                       onClick={() =>
                         void runReconcile({ action: "accept", candidate })
                       }
@@ -541,7 +600,7 @@ export function ResearchFindingsPanel({
                     <button
                       type="button"
                       className="secondary"
-                      disabled={busyCandidateId !== null}
+                      disabled={controlsBusy}
                       onClick={() => startEdit(candidate)}
                     >
                       Edit
@@ -549,7 +608,7 @@ export function ResearchFindingsPanel({
                     <button
                       type="button"
                       className="secondary"
-                      disabled={busyCandidateId !== null}
+                      disabled={controlsBusy}
                       onClick={() =>
                         void runReconcile({ action: "reject", candidate })
                       }
@@ -586,7 +645,7 @@ export function ResearchFindingsPanel({
                 <button
                   type="button"
                   className="secondary"
-                  disabled={busyCandidateId !== null}
+                  disabled={controlsBusy}
                   onClick={() => void runReconcile({ action: "reject", candidate })}
                 >
                   Reject
