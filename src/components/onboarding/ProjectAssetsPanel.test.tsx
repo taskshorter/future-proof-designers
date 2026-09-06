@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProjectAsset } from "@/lib/factory/contract";
@@ -161,6 +162,9 @@ describe("ProjectAssetsPanel", () => {
     expect(screen.getByText("Couldn’t use this file")).toBeInTheDocument();
     expect(screen.getByText("Removing")).toBeInTheDocument();
     expect(screen.getByText("Removed")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Retry finishing upload/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Use for this project/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
@@ -1342,5 +1346,412 @@ describe("ProjectAssetsPanel", () => {
     ).toHaveLength(uploadCallsAfterA);
     expect(maxActive).toBeLessThanOrEqual(3);
     expect(maxActive).toBe(3);
+  });
+
+  it("authoritative pending customer upload can retry finishing after local job state is lost", async () => {
+    const pendingId = "00000000-0000-4000-8000-0000000000d1";
+    const pending = asset({
+      id: pendingId,
+      originalFilename: "stranded.png",
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+      version: 1,
+    });
+    const ready = asset({
+      id: pendingId,
+      originalFilename: "stranded.png",
+      lifecycleState: "AVAILABLE",
+      validationState: "VALID",
+      version: 2,
+    });
+
+    completeProjectAssetUploadAction.mockResolvedValue({
+      ok: true,
+      assets: { status: "ready", assets: [ready] },
+    });
+
+    function Harness() {
+      const [assetsState, setAssetsState] = useState({
+        status: "ready" as const,
+        assets: [pending],
+      });
+      return (
+        <ProjectAssetsPanel
+          projectId={projectId}
+          assets={assetsState}
+          onAssetsChange={(next) => {
+            onAssetsChange(next);
+            setAssetsState(
+              next.status === "ready"
+                ? next
+                : { status: "ready", assets: [pending] },
+            );
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    const row = document.querySelector(`li[data-asset-id="${pendingId}"]`);
+    expect(row).not.toBeNull();
+    const retry = screen.getByRole("button", {
+      name: /Retry finishing upload/i,
+    });
+    expect(retry).toHaveAttribute("data-asset-id", pendingId);
+
+    fireEvent.click(retry);
+
+    await waitFor(() => {
+      expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    });
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledWith({
+      projectId,
+      assetId: pendingId,
+      expectedVersion: 1,
+      operationId: expect.any(String),
+      correlationId: expect.any(String),
+    });
+    const args = completeProjectAssetUploadAction.mock.calls[0]![0] as {
+      operationId: string;
+      correlationId: string;
+    };
+    expect(args.operationId.length).toBeGreaterThan(0);
+    expect(args.correlationId.length).toBeGreaterThan(0);
+    expect(createProjectAssetUploadIntentAction).not.toHaveBeenCalled();
+    expect(uploadFileToSignedCapability).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onAssetsChange).toHaveBeenCalledWith({
+        status: "ready",
+        assets: [ready],
+      });
+    });
+    expect(
+      screen.queryByRole("button", { name: /Retry finishing upload/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/File added to this project/i)).toBeInTheDocument();
+  });
+
+  it("durable row complete retry reuses operation and correlation IDs on same-page transient failure", async () => {
+    const pendingId = "00000000-0000-4000-8000-0000000000d2";
+    const pending = asset({
+      id: pendingId,
+      originalFilename: "retry-me.png",
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+      version: 3,
+    });
+    const ready = asset({
+      id: pendingId,
+      originalFilename: "retry-me.png",
+      lifecycleState: "AVAILABLE",
+      validationState: "VALID",
+      version: 4,
+    });
+
+    completeProjectAssetUploadAction
+      .mockResolvedValueOnce({
+        ok: false,
+        category: "temporary_failure",
+        message: "Temporary complete failure",
+        assets: { status: "ready", assets: [pending] },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        assets: { status: "ready", assets: [ready] },
+      });
+
+    render(
+      <ProjectAssetsPanel
+        projectId={projectId}
+        assets={{ status: "ready", assets: [pending] }}
+        onAssetsChange={onAssetsChange}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Retry finishing upload/i }),
+    );
+
+    await waitFor(() => {
+      expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    });
+    const first = completeProjectAssetUploadAction.mock.calls[0]![0];
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Retry finishing upload/i }),
+    );
+
+    await waitFor(() => {
+      expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(2);
+    });
+    const second = completeProjectAssetUploadAction.mock.calls[1]![0];
+    expect(second).toEqual(first);
+    expect(second).toMatchObject({
+      assetId: pendingId,
+      expectedVersion: 3,
+      operationId: (first as { operationId: string }).operationId,
+      correlationId: (first as { correlationId: string }).correlationId,
+    });
+    expect(createProjectAssetUploadIntentAction).not.toHaveBeenCalled();
+    expect(uploadFileToSignedCapability).not.toHaveBeenCalled();
+  });
+
+  it("local complete-only job suppresses durable row retry for the same asset", async () => {
+    const pending = asset({
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+    });
+
+    createProjectAssetUploadIntentAction.mockResolvedValue({
+      ok: true,
+      asset: pending,
+      upload: {
+        provider: "SUPABASE",
+        bucket: "fp-project-assets",
+        path: "projects/p/a/obj",
+        token: "tok",
+        expiresAt: null,
+      },
+      replayed: false,
+    });
+    uploadFileToSignedCapability.mockResolvedValue({ ok: true });
+    completeProjectAssetUploadAction.mockResolvedValue({
+      ok: false,
+      category: "temporary_failure",
+      message: "Temporary complete failure",
+    });
+    refreshProjectAssetsAction.mockResolvedValue({
+      ok: true,
+      assets: { status: "ready", assets: [pending] },
+    });
+
+    function Harness() {
+      const [assetsState, setAssetsState] = useState({
+        status: "ready" as const,
+        assets: [] as ProjectAsset[],
+      });
+      return (
+        <ProjectAssetsPanel
+          projectId={projectId}
+          assets={assetsState}
+          onAssetsChange={(next) => {
+            onAssetsChange(next);
+            setAssetsState(
+              next.status === "ready"
+                ? next
+                : { status: "ready", assets: [] },
+            );
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.change(screen.getByLabelText(/Add files/i), {
+      target: { files: [new File(["png"], "logo.png", { type: "image/png" })] },
+    });
+
+    expect(
+      await screen.findByRole("button", { name: /Retry upload/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Needs finish retry/i)).toBeInTheDocument();
+
+    const authoritativeRow = document.querySelector(
+      `li[data-asset-id="${pending.id}"]`,
+    );
+    expect(authoritativeRow).not.toBeNull();
+    expect(authoritativeRow).toHaveTextContent(pending.originalFilename);
+    expect(authoritativeRow).toHaveTextContent(/Finishing upload/i);
+
+    expect(
+      screen.queryByRole("button", { name: /Retry finishing upload/i }),
+    ).not.toBeInTheDocument();
+
+    expect(createProjectAssetUploadIntentAction).toHaveBeenCalledTimes(1);
+    expect(uploadFileToSignedCapability).toHaveBeenCalledTimes(1);
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    expect(refreshProjectAssetsAction).toHaveBeenCalled();
+  });
+
+  it("does not offer durable finish retry for AVAILABLE, FAILED, or discovered assets", () => {
+    const availableId = "00000000-0000-4000-8000-0000000000e1";
+    const failedId = "00000000-0000-4000-8000-0000000000e2";
+    const discoveredId = "00000000-0000-4000-8000-0000000000e3";
+
+    render(
+      <ProjectAssetsPanel
+        projectId={projectId}
+        assets={{
+          status: "ready",
+          assets: [
+            asset({
+              id: availableId,
+              originalFilename: "ready.png",
+              lifecycleState: "AVAILABLE",
+              validationState: "VALID",
+            }),
+            asset({
+              id: failedId,
+              originalFilename: "failed.png",
+              lifecycleState: "FAILED",
+              validationState: "INVALID",
+            }),
+            asset({
+              id: discoveredId,
+              originalFilename: "found.png",
+              origin: "PUBLICLY_DISCOVERED",
+              lifecycleState: "PENDING_UPLOAD",
+              validationState: "UNVALIDATED",
+              rightsState: "REUSE_RIGHTS_UNCONFIRMED",
+              availableAt: null,
+            }),
+          ],
+        }}
+        onAssetsChange={onAssetsChange}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /Retry finishing upload/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelector(`li[data-asset-id="${availableId}"]`),
+    ).not.toBeNull();
+    expect(
+      document.querySelector(`li[data-asset-id="${failedId}"]`),
+    ).not.toBeNull();
+    expect(
+      document.querySelector(`li[data-asset-id="${discoveredId}"]`),
+    ).not.toBeNull();
+  });
+
+  it("reconciles durable complete stale_or_conflicting when authoritative row is AVAILABLE", async () => {
+    const pendingId = "00000000-0000-4000-8000-0000000000d3";
+    const pending = asset({
+      id: pendingId,
+      originalFilename: "stale.png",
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+      version: 1,
+    });
+    const ready = asset({
+      id: pendingId,
+      originalFilename: "stale.png",
+      lifecycleState: "AVAILABLE",
+      validationState: "VALID",
+      version: 2,
+    });
+
+    completeProjectAssetUploadAction.mockResolvedValue({
+      ok: false,
+      category: "stale_or_conflicting",
+      message: "State changed",
+      assets: { status: "ready", assets: [ready] },
+    });
+
+    function Harness() {
+      const [assetsState, setAssetsState] = useState({
+        status: "ready" as const,
+        assets: [pending],
+      });
+      return (
+        <ProjectAssetsPanel
+          projectId={projectId}
+          assets={assetsState}
+          onAssetsChange={(next) => {
+            onAssetsChange(next);
+            setAssetsState(
+              next.status === "ready"
+                ? next
+                : { status: "ready", assets: [pending] },
+            );
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Retry finishing upload/i }),
+    );
+
+    await waitFor(() => {
+      expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    });
+    expect(createProjectAssetUploadIntentAction).not.toHaveBeenCalled();
+    expect(uploadFileToSignedCapability).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onAssetsChange).toHaveBeenCalledWith({
+        status: "ready",
+        assets: [ready],
+      });
+    });
+    expect(
+      screen.queryByRole("button", { name: /Retry finishing upload/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/File added to this project/i)).toBeInTheDocument();
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("durable finish retry follows existing signInPath auth redirect", async () => {
+    const pending = asset({
+      id: "00000000-0000-4000-8000-0000000000d4",
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+    });
+
+    completeProjectAssetUploadAction.mockResolvedValue({
+      ok: false,
+      category: "auth_required",
+      message: "Sign in required",
+      signInPath: "/sign-in?next=%2Fportal",
+    });
+    refreshProjectAssetsAction.mockResolvedValue({
+      ok: false,
+      category: "auth_required",
+      message: "Sign in required",
+      signInPath: "/sign-in?next=%2Fportal",
+    });
+
+    // jsdom may not allow spying location.assign; stub the whole location.
+    const assign = vi.fn();
+    const previous = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...previous, assign },
+    });
+
+    try {
+      render(
+        <ProjectAssetsPanel
+          projectId={projectId}
+          assets={{ status: "ready", assets: [pending] }}
+          onAssetsChange={onAssetsChange}
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: /Retry finishing upload/i }),
+      );
+
+      await waitFor(() => {
+        expect(assign).toHaveBeenCalledWith("/sign-in?next=%2Fportal");
+      });
+      expect(createProjectAssetUploadIntentAction).not.toHaveBeenCalled();
+      expect(uploadFileToSignedCapability).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: previous,
+      });
+    }
   });
 });
