@@ -196,6 +196,105 @@ export function ProjectAssetsPanel({
     [applyAssets, updateJobs],
   );
 
+  const finishDurableCompleteFailure = useCallback(
+    (assets: ProjectAssetsLoadState, localId: string) => {
+      applyAssets(assets);
+      updateJobs((prev) =>
+        prev.map((entry) =>
+          entry.localId === localId
+            ? {
+                ...entry,
+                phase: "failed",
+                failureStage: undefined,
+                message: "This file couldn’t be accepted. Choose another file.",
+              }
+            : entry,
+        ),
+      );
+    },
+    [applyAssets, updateJobs],
+  );
+
+  /**
+   * After any Factory complete failure with a known assetId, reconcile against
+   * authoritative assets before choosing local retry stage.
+   */
+  const settleFailedComplete = useCallback(
+    async (input: {
+      localId: string;
+      assetId: string;
+      expectedVersion: number;
+      message: string;
+      assetsFromResponse?: ProjectAssetsLoadState;
+      signInPath?: string;
+      /** true: Storage already succeeded → complete-only retry if pending. */
+      storageConfirmed: boolean;
+    }): Promise<void> => {
+      if (input.signInPath) {
+        window.location.assign(input.signInPath);
+      }
+
+      let assets = input.assetsFromResponse ?? null;
+      if (assets) {
+        applyAssets(assets);
+      } else {
+        assets = await reloadAssets();
+      }
+
+      if (!assets || assets.status !== "ready") {
+        updateJobs((prev) =>
+          prev.map((entry) =>
+            entry.localId === input.localId
+              ? {
+                  ...entry,
+                  phase: "failed",
+                  failureStage: input.storageConfirmed ? "complete" : "upload",
+                  uploadConfirmed: input.storageConfirmed,
+                  assetId: input.assetId,
+                  expectedVersion: input.expectedVersion,
+                  message: input.message,
+                }
+              : entry,
+          ),
+        );
+        return;
+      }
+
+      const outcome = reconcileCompleteAgainstAssets(assets, input.assetId);
+      if (outcome === "done") {
+        finishCompleteSuccess(assets, input.localId);
+        return;
+      }
+      if (outcome === "durable_failure") {
+        finishDurableCompleteFailure(assets, input.localId);
+        return;
+      }
+
+      updateJobs((prev) =>
+        prev.map((entry) =>
+          entry.localId === input.localId
+            ? {
+                ...entry,
+                phase: "failed",
+                failureStage: input.storageConfirmed ? "complete" : "upload",
+                uploadConfirmed: input.storageConfirmed,
+                assetId: input.assetId,
+                expectedVersion: input.expectedVersion,
+                message: input.message,
+              }
+            : entry,
+        ),
+      );
+    },
+    [
+      applyAssets,
+      finishCompleteSuccess,
+      finishDurableCompleteFailure,
+      reloadAssets,
+      updateJobs,
+    ],
+  );
+
   const runCompleteOnly = useCallback(
     async (job: LocalUploadJob) => {
       if (!job.assetId || job.expectedVersion == null) {
@@ -238,66 +337,21 @@ export function ProjectAssetsPanel({
       });
 
       if (!completed.ok) {
-        if (completed.signInPath) window.location.assign(completed.signInPath);
-
-        if (completed.category === "stale_or_conflicting") {
-          const assets =
-            completed.assets ?? (await reloadAssets()) ?? {
-              status: "unavailable" as const,
-              category: completed.category,
-              message: completed.message,
-            };
-          if (completed.assets) applyAssets(completed.assets);
-          const outcome = reconcileCompleteAgainstAssets(assets, job.assetId);
-          if (outcome === "done") {
-            finishCompleteSuccess(assets, job.localId);
-            return;
-          }
-          if (outcome === "durable_failure") {
-            updateJobs((prev) =>
-              prev.map((entry) =>
-                entry.localId === job.localId
-                  ? {
-                      ...entry,
-                      phase: "failed",
-                      failureStage: undefined,
-                      message:
-                        "This file couldn’t be accepted. Choose another file or contact support.",
-                    }
-                  : entry,
-              ),
-            );
-            return;
-          }
-        } else if (completed.assets) {
-          applyAssets(completed.assets);
-        }
-
-        updateJobs((prev) =>
-          prev.map((entry) =>
-            entry.localId === job.localId
-              ? {
-                  ...entry,
-                  phase: "failed",
-                  failureStage: "complete",
-                  uploadConfirmed: true,
-                  message: completed.message,
-                }
-              : entry,
-          ),
-        );
+        await settleFailedComplete({
+          localId: job.localId,
+          assetId: job.assetId,
+          expectedVersion: job.expectedVersion,
+          message: completed.message,
+          assetsFromResponse: completed.assets,
+          signInPath: completed.signInPath,
+          storageConfirmed: true,
+        });
         return;
       }
 
       finishCompleteSuccess(completed.assets, job.localId);
     },
-    [
-      applyAssets,
-      finishCompleteSuccess,
-      projectId,
-      reloadAssets,
-      updateJobs,
-    ],
+    [finishCompleteSuccess, projectId, settleFailedComplete, updateJobs],
   );
 
   const runUploadJob = useCallback(
@@ -385,15 +439,14 @@ export function ProjectAssetsPanel({
             finishCompleteSuccess(probed.assets, job.localId);
             return;
           }
-          if (probed.assets) applyAssets(probed.assets);
-          if (probed.signInPath) window.location.assign(probed.signInPath);
-          mark({
-            phase: "failed",
-            failureStage: "upload",
-            uploadConfirmed: false,
+          await settleFailedComplete({
+            localId: job.localId,
             assetId: intent.asset.id,
             expectedVersion: intent.asset.version,
             message: uploaded.message,
+            assetsFromResponse: probed.assets,
+            signInPath: probed.signInPath,
+            storageConfirmed: false,
           });
           return;
         }
@@ -426,45 +479,14 @@ export function ProjectAssetsPanel({
       });
 
       if (!completed.ok) {
-        if (completed.signInPath) window.location.assign(completed.signInPath);
-
-        if (completed.category === "stale_or_conflicting") {
-          const assets =
-            completed.assets ?? (await reloadAssets()) ?? {
-              status: "unavailable" as const,
-              category: completed.category,
-              message: completed.message,
-            };
-          if (completed.assets) applyAssets(completed.assets);
-          const outcome = reconcileCompleteAgainstAssets(
-            assets,
-            intent.asset.id,
-          );
-          if (outcome === "done") {
-            finishCompleteSuccess(assets, job.localId);
-            return;
-          }
-          if (outcome === "durable_failure") {
-            mark({
-              phase: "failed",
-              failureStage: undefined,
-              uploadConfirmed: true,
-              message:
-                "This file couldn’t be accepted. Choose another file or contact support.",
-            });
-            return;
-          }
-        } else if (completed.assets) {
-          applyAssets(completed.assets);
-        }
-
-        mark({
-          phase: "failed",
-          failureStage: "complete",
-          uploadConfirmed: true,
-          message: completed.message,
+        await settleFailedComplete({
+          localId: job.localId,
           assetId: intent.asset.id,
           expectedVersion: intent.asset.version,
+          message: completed.message,
+          assetsFromResponse: completed.assets,
+          signInPath: completed.signInPath,
+          storageConfirmed: true,
         });
         return;
       }
@@ -475,8 +497,8 @@ export function ProjectAssetsPanel({
       applyAssets,
       finishCompleteSuccess,
       projectId,
-      reloadAssets,
       runCompleteOnly,
+      settleFailedComplete,
       updateJobs,
     ],
   );
@@ -545,15 +567,10 @@ export function ProjectAssetsPanel({
 
   const retryJob = (localId: string) => {
     const job = jobsRef.current.find((entry) => entry.localId === localId);
-    if (!job || job.phase !== "failed") return;
+    if (!job || job.phase !== "failed" || !job.failureStage) return;
 
-    if (job.failureStage === "complete" && job.uploadConfirmed) {
-      // Preserve IDs; skip intent + Storage.
-      void runCompleteOnly({ ...job, phase: "completing", message: undefined });
-      return;
-    }
-
-    // Intent or upload failure: re-queue with SAME operation IDs.
+    // Always re-queue so MAX_CONCURRENT_UPLOADS governs complete-only retries too.
+    // Preserves operation IDs, failureStage, and uploadConfirmed for runUploadJob.
     updateJobs((prev) =>
       prev.map((entry) =>
         entry.localId === localId
@@ -799,11 +816,13 @@ export function ProjectAssetsPanel({
                           ? "Finishing"
                           : job.failureStage === "complete"
                             ? "Needs finish retry"
-                            : "Needs retry"}
+                            : job.failureStage
+                              ? "Needs retry"
+                              : "Couldn’t be accepted"}
                 </span>
               </div>
               {job.message ? <p className="form-error">{job.message}</p> : null}
-              {job.phase === "failed" ? (
+              {job.phase === "failed" && job.failureStage ? (
                 <button
                   type="button"
                   className="secondary"

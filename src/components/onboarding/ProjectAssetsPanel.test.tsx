@@ -325,6 +325,11 @@ describe("ProjectAssetsPanel", () => {
         ok: true,
         assets: { status: "ready", assets: [ready] },
       });
+    // Authoritative row still nonterminal → complete-only retry remains available.
+    refreshProjectAssetsAction.mockResolvedValue({
+      ok: true,
+      assets: { status: "ready", assets: [pending] },
+    });
 
     render(
       <ProjectAssetsPanel
@@ -342,6 +347,7 @@ describe("ProjectAssetsPanel", () => {
     expect(createProjectAssetUploadIntentAction).toHaveBeenCalledTimes(1);
     expect(uploadFileToSignedCapability).toHaveBeenCalledTimes(1);
     expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    expect(refreshProjectAssetsAction).toHaveBeenCalled();
 
     const firstComplete = completeProjectAssetUploadAction.mock.calls[0]![0];
     fireEvent.click(screen.getByRole("button", { name: /Retry upload/i }));
@@ -961,5 +967,380 @@ describe("ProjectAssetsPanel", () => {
     });
     expect(maxInFlight).toBeLessThanOrEqual(3);
     expect(maxInFlight).toBe(3);
+  });
+
+  it("treats invalid finalize as durable FAILED/INVALID with no retry", async () => {
+    const pending = asset({
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+    });
+    const failed = asset({
+      lifecycleState: "FAILED",
+      validationState: "INVALID",
+      version: 2,
+      failedAt: "2026-01-01T00:01:00.000Z",
+      availableAt: null,
+    });
+
+    createProjectAssetUploadIntentAction.mockResolvedValue({
+      ok: true,
+      asset: pending,
+      upload: {
+        provider: "SUPABASE",
+        bucket: "b",
+        path: "p",
+        token: "t",
+        expiresAt: null,
+      },
+      replayed: false,
+    });
+    uploadFileToSignedCapability.mockResolvedValue({ ok: true });
+    completeProjectAssetUploadAction.mockResolvedValue({
+      ok: false,
+      category: "invalid_input",
+      message: "Validation failed",
+    });
+    refreshProjectAssetsAction.mockResolvedValue({
+      ok: true,
+      assets: { status: "ready", assets: [failed] },
+    });
+
+    render(
+      <ProjectAssetsPanel
+        projectId={projectId}
+        assets={{ status: "ready", assets: [] }}
+        onAssetsChange={onAssetsChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Add files/i), {
+      target: { files: [new File(["x"], "bad.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => {
+      expect(onAssetsChange).toHaveBeenCalledWith({
+        status: "ready",
+        assets: [failed],
+      });
+    });
+    expect(
+      await screen.findByText("This file couldn’t be accepted. Choose another file."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry upload/i })).not.toBeInTheDocument();
+    expect(createProjectAssetUploadIntentAction).toHaveBeenCalledTimes(1);
+    expect(uploadFileToSignedCapability).toHaveBeenCalledTimes(1);
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("ambiguity probe durable FAILED/INVALID clears Retry upload", async () => {
+    const pending = asset({
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+    });
+    const failed = asset({
+      lifecycleState: "FAILED",
+      validationState: "INVALID",
+      version: 2,
+      availableAt: null,
+      failedAt: "2026-01-01T00:01:00.000Z",
+    });
+
+    createProjectAssetUploadIntentAction.mockResolvedValue({
+      ok: true,
+      asset: pending,
+      upload: {
+        provider: "SUPABASE",
+        bucket: "b",
+        path: "p",
+        token: "tok",
+        expiresAt: null,
+      },
+      replayed: false,
+    });
+    uploadFileToSignedCapability.mockResolvedValue({
+      ok: false,
+      message: "Upload to storage failed. Please try again.",
+    });
+    completeProjectAssetUploadAction.mockResolvedValue({
+      ok: false,
+      category: "invalid_input",
+      message: "Validation failed",
+    });
+    refreshProjectAssetsAction.mockResolvedValue({
+      ok: true,
+      assets: { status: "ready", assets: [failed] },
+    });
+
+    render(
+      <ProjectAssetsPanel
+        projectId={projectId}
+        assets={{ status: "ready", assets: [] }}
+        onAssetsChange={onAssetsChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Add files/i), {
+      target: { files: [new File(["x"], "a.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByRole("button", { name: /Retry upload/i })).toBeInTheDocument();
+    expect(completeProjectAssetUploadAction).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Retry upload/i }));
+
+    await waitFor(() => {
+      expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+      expect(onAssetsChange).toHaveBeenCalledWith({
+        status: "ready",
+        assets: [failed],
+      });
+    });
+    expect(screen.queryByText(/File added to this project/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry upload/i })).not.toBeInTheDocument();
+    expect(createProjectAssetUploadIntentAction).toHaveBeenCalledTimes(2);
+    expect(uploadFileToSignedCapability).toHaveBeenCalledTimes(2);
+    const completeArgs = completeProjectAssetUploadAction.mock.calls[0]![0];
+    expect(completeArgs).toMatchObject({
+      assetId: pending.id,
+      expectedVersion: pending.version,
+    });
+  });
+
+  it("converges to done when complete temporary-fails but refresh is AVAILABLE+VALID", async () => {
+    const pending = asset({
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+    });
+    const ready = asset({
+      lifecycleState: "AVAILABLE",
+      validationState: "VALID",
+      version: 2,
+    });
+
+    createProjectAssetUploadIntentAction.mockResolvedValue({
+      ok: true,
+      asset: pending,
+      upload: {
+        provider: "SUPABASE",
+        bucket: "b",
+        path: "p",
+        token: "t",
+        expiresAt: null,
+      },
+      replayed: false,
+    });
+    uploadFileToSignedCapability.mockResolvedValue({ ok: true });
+    completeProjectAssetUploadAction.mockResolvedValue({
+      ok: false,
+      category: "temporary_failure",
+      message: "Lost response",
+    });
+    refreshProjectAssetsAction.mockResolvedValue({
+      ok: true,
+      assets: { status: "ready", assets: [ready] },
+    });
+
+    render(
+      <ProjectAssetsPanel
+        projectId={projectId}
+        assets={{ status: "ready", assets: [] }}
+        onAssetsChange={onAssetsChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Add files/i), {
+      target: { files: [new File(["x"], "a.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => {
+      expect(onAssetsChange).toHaveBeenCalledWith({
+        status: "ready",
+        assets: [ready],
+      });
+    });
+    expect(await screen.findByText(/File added to this project/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry upload/i })).not.toBeInTheDocument();
+    expect(uploadFileToSignedCapability).toHaveBeenCalledTimes(1);
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues complete-only retry behind three active upload slots", async () => {
+    const pendingA = asset({
+      id: "00000000-0000-4000-8000-0000000000a1",
+      lifecycleState: "PENDING_UPLOAD",
+      validationState: "UNVALIDATED",
+      availableAt: null,
+      originalFilename: "a.png",
+    });
+    const readyA = asset({
+      id: pendingA.id,
+      lifecycleState: "AVAILABLE",
+      validationState: "VALID",
+      version: 2,
+      originalFilename: "a.png",
+    });
+
+    const bcdGates: Array<ReturnType<typeof deferred<void>>> = [];
+    let activeSlots = 0;
+    let maxActive = 0;
+
+    createProjectAssetUploadIntentAction.mockImplementation(async (input: {
+      originalFilename: string;
+    }) => {
+      if (input.originalFilename === "a.png") {
+        return {
+          ok: true,
+          asset: pendingA,
+          upload: {
+            provider: "SUPABASE",
+            bucket: "b",
+            path: "p/a",
+            token: "ta",
+            expiresAt: null,
+          },
+          replayed: false,
+        };
+      }
+      activeSlots += 1;
+      maxActive = Math.max(maxActive, activeSlots);
+      const gate = deferred<void>();
+      bcdGates.push(gate);
+      await gate.promise;
+      const n = bcdGates.indexOf(gate) + 2;
+      return {
+        ok: true,
+        asset: asset({
+          id: `00000000-0000-4000-8000-0000000000b${n}`,
+          lifecycleState: "PENDING_UPLOAD",
+          validationState: "UNVALIDATED",
+          availableAt: null,
+          originalFilename: input.originalFilename,
+        }),
+        upload: {
+          provider: "SUPABASE",
+          bucket: "b",
+          path: `p/${input.originalFilename}`,
+          token: `t-${input.originalFilename}`,
+          expiresAt: null,
+        },
+        replayed: false,
+      };
+    });
+
+    uploadFileToSignedCapability.mockImplementation(async (input: { file: File }) => {
+      maxActive = Math.max(maxActive, activeSlots);
+      if (input.file.name === "a.png") return { ok: true };
+      return { ok: true };
+    });
+
+    completeProjectAssetUploadAction
+      .mockResolvedValueOnce({
+        ok: false,
+        category: "temporary_failure",
+        message: "complete delayed",
+      })
+      .mockImplementation(async (input: { assetId: string }) => {
+        maxActive = Math.max(maxActive, activeSlots);
+        if (input.assetId === pendingA.id) {
+          return {
+            ok: true,
+            assets: { status: "ready", assets: [readyA] },
+          };
+        }
+        activeSlots -= 1;
+        return {
+          ok: true,
+          assets: {
+            status: "ready",
+            assets: [
+              asset({
+                id: input.assetId,
+                lifecycleState: "AVAILABLE",
+                validationState: "VALID",
+                version: 2,
+              }),
+            ],
+          },
+        };
+      });
+
+    refreshProjectAssetsAction.mockResolvedValue({
+      ok: true,
+      assets: { status: "ready", assets: [pendingA] },
+    });
+
+    render(
+      <ProjectAssetsPanel
+        projectId={projectId}
+        assets={{ status: "ready", assets: [] }}
+        onAssetsChange={onAssetsChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Add files/i), {
+      target: { files: [new File(["a"], "a.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByRole("button", { name: /Retry upload/i })).toBeInTheDocument();
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    const firstComplete = completeProjectAssetUploadAction.mock.calls[0]![0];
+    const intentCallsAfterA = createProjectAssetUploadIntentAction.mock.calls.length;
+    const uploadCallsAfterA = uploadFileToSignedCapability.mock.calls.length;
+
+    fireEvent.change(screen.getByLabelText(/Add files/i), {
+      target: {
+        files: [
+          new File(["b"], "b.png", { type: "image/png" }),
+          new File(["c"], "c.png", { type: "image/png" }),
+          new File(["d"], "d.png", { type: "image/png" }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(bcdGates.length).toBe(3);
+    });
+    expect(activeSlots).toBe(3);
+    expect(maxActive).toBeLessThanOrEqual(3);
+
+    fireEvent.click(screen.getByRole("button", { name: /Retry upload/i }));
+
+    // Complete-only retry must wait for a free slot.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    expect(maxActive).toBeLessThanOrEqual(3);
+
+    await act(async () => {
+      bcdGates[0]!.resolve();
+      bcdGates[1]!.resolve();
+      bcdGates[2]!.resolve();
+    });
+
+    await waitFor(() => {
+      const aCompletes = completeProjectAssetUploadAction.mock.calls.filter(
+        (call) => (call[0] as { assetId: string }).assetId === pendingA.id,
+      );
+      expect(aCompletes.length).toBe(2);
+    });
+    const aCompletes = completeProjectAssetUploadAction.mock.calls.filter(
+      (call) => (call[0] as { assetId: string }).assetId === pendingA.id,
+    );
+    expect(aCompletes[1]![0]).toEqual(firstComplete);
+    expect(createProjectAssetUploadIntentAction.mock.calls.length).toBe(
+      intentCallsAfterA + 3,
+    );
+    expect(
+      uploadFileToSignedCapability.mock.calls.filter(
+        (call) => (call[0] as { file: File }).file.name === "a.png",
+      ),
+    ).toHaveLength(uploadCallsAfterA);
+    expect(maxActive).toBeLessThanOrEqual(3);
+    expect(maxActive).toBe(3);
   });
 });
