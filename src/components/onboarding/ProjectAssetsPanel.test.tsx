@@ -1505,11 +1505,6 @@ describe("ProjectAssetsPanel", () => {
       validationState: "UNVALIDATED",
       availableAt: null,
     });
-    const ready = asset({
-      lifecycleState: "AVAILABLE",
-      validationState: "VALID",
-      version: 2,
-    });
 
     createProjectAssetUploadIntentAction.mockResolvedValue({
       ok: true,
@@ -1534,13 +1529,28 @@ describe("ProjectAssetsPanel", () => {
       assets: { status: "ready", assets: [pending] },
     });
 
-    render(
-      <ProjectAssetsPanel
-        projectId={projectId}
-        assets={{ status: "ready", assets: [] }}
-        onAssetsChange={onAssetsChange}
-      />,
-    );
+    function Harness() {
+      const [assetsState, setAssetsState] = useState({
+        status: "ready" as const,
+        assets: [] as ProjectAsset[],
+      });
+      return (
+        <ProjectAssetsPanel
+          projectId={projectId}
+          assets={assetsState}
+          onAssetsChange={(next) => {
+            onAssetsChange(next);
+            setAssetsState(
+              next.status === "ready"
+                ? next
+                : { status: "ready", assets: [] },
+            );
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
 
     fireEvent.change(screen.getByLabelText(/Add files/i), {
       target: { files: [new File(["png"], "logo.png", { type: "image/png" })] },
@@ -1549,10 +1559,23 @@ describe("ProjectAssetsPanel", () => {
     expect(
       await screen.findByRole("button", { name: /Retry upload/i }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Needs finish retry/i)).toBeInTheDocument();
+
+    const authoritativeRow = document.querySelector(
+      `li[data-asset-id="${pending.id}"]`,
+    );
+    expect(authoritativeRow).not.toBeNull();
+    expect(authoritativeRow).toHaveTextContent(pending.originalFilename);
+    expect(authoritativeRow).toHaveTextContent(/Finishing upload/i);
+
     expect(
       screen.queryByRole("button", { name: /Retry finishing upload/i }),
     ).not.toBeInTheDocument();
-    expect(ready.version).toBe(2);
+
+    expect(createProjectAssetUploadIntentAction).toHaveBeenCalledTimes(1);
+    expect(uploadFileToSignedCapability).toHaveBeenCalledTimes(1);
+    expect(completeProjectAssetUploadAction).toHaveBeenCalledTimes(1);
+    expect(refreshProjectAssetsAction).toHaveBeenCalled();
   });
 
   it("does not offer durable finish retry for AVAILABLE, FAILED, or discovered assets", () => {
