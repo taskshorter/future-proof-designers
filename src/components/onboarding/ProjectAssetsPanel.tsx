@@ -45,6 +45,17 @@ type RemovalIntent = {
   expectedVersion: number;
 };
 
+/**
+ * Ephemeral in-memory complete-only intent for authoritative PENDING_UPLOAD
+ * rows after LocalUploadJob state is lost. Discarded on full page reload.
+ */
+type CompletionIntent = {
+  assetId: string;
+  operationId: string;
+  correlationId: string;
+  expectedVersion: number;
+};
+
 function newId(): string {
   return crypto.randomUUID();
 }
@@ -106,6 +117,26 @@ function reconcileCompleteAgainstAssets(
   return "retry";
 }
 
+function hasMatchingLocalJob(
+  jobs: LocalUploadJob[],
+  assetId: string,
+): boolean {
+  return jobs.some(
+    (job) => job.phase !== "done" && job.assetId === assetId,
+  );
+}
+
+function canDurableCompleteRetry(
+  asset: ProjectAsset,
+  jobs: LocalUploadJob[],
+): boolean {
+  return (
+    asset.origin === "CUSTOMER_UPLOAD" &&
+    asset.lifecycleState === "PENDING_UPLOAD" &&
+    !hasMatchingLocalJob(jobs, asset.id)
+  );
+}
+
 export function ProjectAssetsPanel({
   projectId,
   assets: assetsState,
@@ -119,6 +150,9 @@ export function ProjectAssetsPanel({
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null);
   const [removalIntents, setRemovalIntents] = useState<
     Record<string, RemovalIntent>
+  >({});
+  const [completionIntents, setCompletionIntents] = useState<
+    Record<string, CompletionIntent>
   >({});
   const jobsRef = useRef(jobs);
   const pumpRunning = useRef(false);
@@ -149,6 +183,20 @@ export function ProjectAssetsPanel({
             if (!row) continue;
             if (row.lifecycleState === "REMOVED") continue;
             if (row.lifecycleState === "REMOVAL_PENDING") {
+              kept[assetId] = intent;
+            }
+          }
+          return kept;
+        });
+        setCompletionIntents((prev) => {
+          const kept: Record<string, CompletionIntent> = {};
+          for (const [assetId, intent] of Object.entries(prev)) {
+            const row = next.assets.find((entry) => entry.id === assetId);
+            if (!row) continue;
+            if (
+              row.lifecycleState === "PENDING_UPLOAD" &&
+              row.version === intent.expectedVersion
+            ) {
               kept[assetId] = intent;
             }
           }
@@ -580,6 +628,101 @@ export function ProjectAssetsPanel({
     );
   };
 
+  /**
+   * Complete-only recovery for authoritative CUSTOMER_UPLOAD PENDING_UPLOAD
+   * rows after LocalUploadJob state is gone. Never re-uploads.
+   */
+  const runDurableCompleteRetry = useCallback(
+    async (asset: ProjectAsset) => {
+      if (!canDurableCompleteRetry(asset, jobsRef.current)) return;
+      if (busyAssetId === asset.id) return;
+
+      setBusyAssetId(asset.id);
+      setPanelError(null);
+      setPanelMessage(null);
+
+      const existing = completionIntents[asset.id];
+      const intent: CompletionIntent =
+        existing && existing.expectedVersion === asset.version
+          ? existing
+          : {
+              assetId: asset.id,
+              operationId: newId(),
+              correlationId: newId(),
+              expectedVersion: asset.version,
+            };
+
+      // Persist BEFORE the network call so temporary_failure can resume same IDs.
+      setCompletionIntents((prev) => ({ ...prev, [asset.id]: intent }));
+
+      try {
+        const completed = await completeProjectAssetUploadAction({
+          projectId,
+          assetId: intent.assetId,
+          operationId: intent.operationId,
+          correlationId: intent.correlationId,
+          expectedVersion: intent.expectedVersion,
+        });
+
+        if (!completed.ok && completed.signInPath) {
+          window.location.assign(completed.signInPath);
+        }
+
+        if (completed.ok) {
+          applyAssets(completed.assets);
+          setCompletionIntents((prev) => {
+            const next = { ...prev };
+            delete next[asset.id];
+            return next;
+          });
+          setPanelMessage("File added to this project.");
+          return;
+        }
+
+        let assets = completed.assets ?? null;
+        if (assets) {
+          applyAssets(assets);
+        } else {
+          assets = await reloadAssets();
+        }
+
+        if (!assets || assets.status !== "ready") {
+          setPanelError(completed.message);
+          return;
+        }
+
+        const outcome = reconcileCompleteAgainstAssets(assets, asset.id);
+        if (outcome === "done") {
+          setCompletionIntents((prev) => {
+            const next = { ...prev };
+            delete next[asset.id];
+            return next;
+          });
+          setPanelMessage("File added to this project.");
+          return;
+        }
+        if (outcome === "durable_failure") {
+          setCompletionIntents((prev) => {
+            const next = { ...prev };
+            delete next[asset.id];
+            return next;
+          });
+          setPanelError(
+            completed.message ||
+              "This file couldn’t be accepted. Choose another file.",
+          );
+          return;
+        }
+
+        // Still PENDING_UPLOAD — keep CompletionIntent for same-page retry.
+        setPanelError(completed.message);
+      } finally {
+        setBusyAssetId(null);
+      }
+    },
+    [applyAssets, busyAssetId, completionIntents, projectId, reloadAssets],
+  );
+
   const handleOpen = async (asset: ProjectAsset) => {
     setBusyAssetId(asset.id);
     setPanelError(null);
@@ -854,8 +997,16 @@ export function ProjectAssetsPanel({
             const rights = assetRightsLabel(asset);
             const busy = busyAssetId === asset.id;
             const removalIntent = removalIntents[asset.id];
+            const showDurableCompleteRetry = canDurableCompleteRetry(
+              asset,
+              jobs,
+            );
             return (
-              <li key={asset.id} className={rowClassName(asset)}>
+              <li
+                key={asset.id}
+                className={rowClassName(asset)}
+                data-asset-id={asset.id}
+              >
                 <div className="project-asset-main">
                   <div>
                     <strong>{asset.originalFilename}</strong>
@@ -910,6 +1061,17 @@ export function ProjectAssetsPanel({
                 ) : null}
 
                 <div className="button-row">
+                  {showDurableCompleteRetry ? (
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      data-asset-id={asset.id}
+                      onClick={() => void runDurableCompleteRetry(asset)}
+                    >
+                      Retry finishing upload
+                    </button>
+                  ) : null}
                   {canOpen(asset) ? (
                     <button
                       type="button"
