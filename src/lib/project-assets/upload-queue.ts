@@ -13,6 +13,9 @@ export type UploadJobPhase =
   | "done"
   | "failed";
 
+/** Local-only: which stage failed so retry can skip irreversible Storage work. */
+export type UploadFailureStage = "intent" | "upload" | "complete";
+
 export type LocalUploadJob = {
   localId: string;
   file: File;
@@ -24,6 +27,9 @@ export type LocalUploadJob = {
   expectedVersion?: number;
   phase: UploadJobPhase;
   message?: string;
+  failureStage?: UploadFailureStage;
+  /** True only after browser Storage upload returned success for this job. */
+  uploadConfirmed?: boolean;
 };
 
 export function countActiveUploadJobs(jobs: readonly LocalUploadJob[]): number {
