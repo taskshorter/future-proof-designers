@@ -3,10 +3,17 @@ import "server-only";
 import { getServerEnv } from "@/lib/env/get-server-env";
 import {
   acceptResearchCandidateRequestSchema,
+  completeProjectAssetUploadRequestSchema,
+  completeProjectAssetUploadSuccessSchema,
+  createProjectAssetReadIntentRequestSchema,
+  createProjectAssetReadIntentSuccessSchema,
+  createProjectAssetUploadIntentRequestSchema,
+  createProjectAssetUploadIntentSuccessSchema,
   editResearchCandidateRequestSchema,
   factoryErrorResponseSchema,
   getProjectOnboardingSuccessSchema,
   getProjectResearchSuccessSchema,
+  listProjectAssetsSuccessSchema,
   projectResumeDetailSuccessSchema,
   projectResumeListSuccessSchema,
   projectStartRequestSchema,
@@ -14,12 +21,23 @@ import {
   reconcileResearchCandidateSuccessSchema,
   rejectResearchCandidateRequestSchema,
   rejectResearchCandidateSuccessSchema,
+  removeProjectAssetRequestSchema,
+  removeProjectAssetSuccessSchema,
   saveProjectOnboardingSectionRequestSchema,
   saveProjectOnboardingSectionSuccessSchema,
+  updateProjectAssetRightsRequestSchema,
+  updateProjectAssetRightsSuccessSchema,
   type AcceptResearchCandidateRequest,
+  type CompleteProjectAssetUploadRequest,
+  type CompleteProjectAssetUploadSuccess,
+  type CreateProjectAssetReadIntentRequest,
+  type CreateProjectAssetReadIntentSuccess,
+  type CreateProjectAssetUploadIntentRequest,
+  type CreateProjectAssetUploadIntentSuccess,
   type EditResearchCandidateRequest,
   type FactoryErrorCategory,
   type FactoryGatewayResult,
+  type ListProjectAssetsSuccess,
   type OnboardingSectionKey,
   type ProjectOnboardingState,
   type ProjectResearchState,
@@ -30,8 +48,12 @@ import {
   type ReconcileResearchCandidateSuccess,
   type RejectResearchCandidateRequest,
   type RejectResearchCandidateSuccess,
+  type RemoveProjectAssetRequest,
+  type RemoveProjectAssetSuccess,
   type SaveProjectOnboardingSectionRequest,
   type SaveProjectOnboardingSectionSuccess,
+  type UpdateProjectAssetRightsRequest,
+  type UpdateProjectAssetRightsSuccess,
 } from "./contract";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -278,5 +300,106 @@ export async function rejectResearchCandidate(
     },
     deps,
     (payload) => rejectResearchCandidateSuccessSchema.parse(payload),
+  );
+}
+
+export async function listProjectAssets(
+  projectId: string,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ListProjectAssetsSuccess>> {
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/assets`,
+    { method: "GET" },
+    deps,
+    (payload) => listProjectAssetsSuccessSchema.parse(payload),
+  );
+}
+
+export async function createProjectAssetUploadIntent(
+  projectId: string,
+  request: CreateProjectAssetUploadIntentRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<CreateProjectAssetUploadIntentSuccess>> {
+  const normalized = createProjectAssetUploadIntentRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/assets/upload-intent`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => createProjectAssetUploadIntentSuccessSchema.parse(payload),
+  );
+}
+
+export async function completeProjectAssetUpload(
+  projectId: string,
+  assetId: string,
+  request: CompleteProjectAssetUploadRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<CompleteProjectAssetUploadSuccess>> {
+  const normalized = completeProjectAssetUploadRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}/complete`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => completeProjectAssetUploadSuccessSchema.parse(payload),
+  );
+}
+
+export async function createProjectAssetReadIntent(
+  projectId: string,
+  assetId: string,
+  request: CreateProjectAssetReadIntentRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<CreateProjectAssetReadIntentSuccess>> {
+  const normalized = createProjectAssetReadIntentRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}/read-intent`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => createProjectAssetReadIntentSuccessSchema.parse(payload),
+  );
+}
+
+export async function removeProjectAsset(
+  projectId: string,
+  assetId: string,
+  request: RemoveProjectAssetRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<RemoveProjectAssetSuccess>> {
+  const normalized = removeProjectAssetRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}/remove`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => removeProjectAssetSuccessSchema.parse(payload),
+  );
+}
+
+export async function updateProjectAssetRights(
+  projectId: string,
+  assetId: string,
+  request: UpdateProjectAssetRightsRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<UpdateProjectAssetRightsSuccess>> {
+  const normalized = updateProjectAssetRightsRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(assetId)}/rights`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => updateProjectAssetRightsSuccessSchema.parse(payload),
   );
 }

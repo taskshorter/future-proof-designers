@@ -616,3 +616,773 @@ describe("Factory research gateway", () => {
     if (!result.ok) expect(result.category).toBe("temporary_failure");
   });
 });
+
+describe("Project asset gateway", () => {
+  const projectId = "00000000-0000-4000-8000-000000000013";
+  const assetId = "00000000-0000-4000-8000-0000000000a1";
+  const correlationId = "00000000-0000-4000-8000-000000000099";
+
+  const asset = {
+    id: assetId,
+    origin: "CUSTOMER_UPLOAD",
+    assetKind: "IMAGE",
+    lifecycleState: "AVAILABLE",
+    validationState: "VALID",
+    rightsState: "CUSTOMER_PROJECT_USE_AUTHORIZED",
+    originalFilename: "logo.png",
+    declaredContentType: "image/png",
+    declaredByteSize: 1024,
+    validatedContentType: "image/png",
+    validatedByteSize: 1024,
+    contentHash: null,
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    availableAt: "2026-01-01T00:00:00.000Z",
+    failedAt: null,
+  };
+
+  const deps = () => ({
+    getAccessToken: async () => "access-token",
+    getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+  });
+
+  it("GETs project assets with exact path and bearer", async () => {
+    const { listProjectAssets } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(JSON.stringify({ ok: true, projectId, assets: [asset] }), {
+        status: 200,
+      }),
+    );
+
+    const result = await listProjectAssets(projectId, { ...deps(), fetchImpl });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.assets).toHaveLength(1);
+      expect(result.data.assets[0]).not.toHaveProperty("object_key");
+    }
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`http://127.0.0.1:3001/api/v1/projects/${projectId}/assets`);
+    expect(init.method).toBe("GET");
+    expect(init.cache).toBe("no-store");
+    expect(init.headers).toMatchObject({
+      Authorization: "Bearer access-token",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("POSTs upload intent with exact path and metadata-only body", async () => {
+    const { createProjectAssetUploadIntent } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          projectId,
+          asset: { ...asset, lifecycleState: "PENDING_UPLOAD" },
+          upload: {
+            provider: "SUPABASE",
+            bucket: "project-assets",
+            path: `projects/${projectId}/${assetId}`,
+            token: "signed-token",
+            expiresAt: "2026-01-01T00:05:00.000Z",
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const body = {
+      operationId: "00000000-0000-4000-8000-0000000000b1",
+      correlationId,
+      originalFilename: "logo.png",
+      contentType: "image/png",
+      byteSize: 1024,
+    };
+
+    const result = await createProjectAssetUploadIntent(projectId, body, {
+      ...deps(),
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/upload-intent`,
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(body);
+  });
+
+  it("accepts the Supabase upload capability path and token", async () => {
+    const { createProjectAssetUploadIntent } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: true,
+          projectId,
+          asset: { ...asset, lifecycleState: "PENDING_UPLOAD" },
+          upload: {
+            provider: "SUPABASE",
+            bucket: "project-assets",
+            path: "projects/abc/def.png",
+            token: "signed-token",
+            expiresAt: null,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await createProjectAssetUploadIntent(
+      projectId,
+      {
+        operationId: "00000000-0000-4000-8000-0000000000b2",
+        correlationId,
+        originalFilename: "logo.png",
+        contentType: "image/png",
+        byteSize: 1024,
+      },
+      { ...deps(), fetchImpl },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.upload).toEqual({
+        provider: "SUPABASE",
+        bucket: "project-assets",
+        path: "projects/abc/def.png",
+        token: "signed-token",
+        expiresAt: null,
+      });
+      expect(result.data.replayed).toBe(true);
+    }
+  });
+
+  it("POSTs complete with exact path and body", async () => {
+    const { completeProjectAssetUpload } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({ ok: true, replayed: false, projectId, asset }),
+        { status: 200 },
+      ),
+    );
+
+    const body = {
+      operationId: "00000000-0000-4000-8000-0000000000b3",
+      correlationId,
+      expectedVersion: 1,
+    };
+
+    const result = await completeProjectAssetUpload(projectId, assetId, body, {
+      ...deps(),
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.asset.lifecycleState).toBe("AVAILABLE");
+    }
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/complete`,
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(body);
+  });
+
+  it("POSTs read intent with exact path and body", async () => {
+    const { createProjectAssetReadIntent } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          projectId,
+          assetId,
+          read: {
+            url: "https://storage.example/signed/logo.png",
+            expiresAt: "2026-01-01T00:05:00.000Z",
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const body = {
+      operationId: "00000000-0000-4000-8000-0000000000b4",
+      correlationId,
+    };
+
+    const result = await createProjectAssetReadIntent(projectId, assetId, body, {
+      ...deps(),
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/read-intent`,
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(body);
+  });
+
+  it("accepts the read capability url and expiry", async () => {
+    const { createProjectAssetReadIntent } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          projectId,
+          assetId,
+          read: {
+            url: "https://storage.example/signed/logo.png?token=abc",
+            expiresAt: "2026-01-01T00:05:00.000Z",
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await createProjectAssetReadIntent(
+      projectId,
+      assetId,
+      {
+        operationId: "00000000-0000-4000-8000-0000000000b5",
+        correlationId,
+      },
+      { ...deps(), fetchImpl },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.read.url).toBe(
+        "https://storage.example/signed/logo.png?token=abc",
+      );
+      expect(result.data.read.expiresAt).toBe("2026-01-01T00:05:00.000Z");
+      expect(result.data.read).not.toHaveProperty("object_key");
+    }
+  });
+
+  it("POSTs remove with exact path and body", async () => {
+    const { removeProjectAsset } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          projectId,
+          asset: { ...asset, lifecycleState: "REMOVAL_PENDING", version: 2 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const body = {
+      operationId: "00000000-0000-4000-8000-0000000000b6",
+      correlationId,
+      expectedVersion: 1,
+    };
+
+    const result = await removeProjectAsset(projectId, assetId, body, {
+      ...deps(),
+      fetchImpl,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.asset.lifecycleState).toBe("REMOVAL_PENDING");
+    }
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/remove`,
+    );
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(body);
+  });
+
+  it("POSTs both rights decisions with exact path and body", async () => {
+    const { updateProjectAssetRights } = await import("./gateway");
+    const expectedRightsState = {
+      CONFIRM_PROJECT_USE: "CUSTOMER_CONFIRMED_PROJECT_USE",
+      DO_NOT_USE: "DO_NOT_USE",
+    } as const;
+
+    for (const decision of ["CONFIRM_PROJECT_USE", "DO_NOT_USE"] as const) {
+      const fetchImpl = mockFetch(
+        new Response(
+          JSON.stringify({
+            ok: true,
+            replayed: false,
+            projectId,
+            asset: {
+              ...asset,
+              origin: "PUBLICLY_DISCOVERED",
+              rightsState: expectedRightsState[decision],
+              version: 2,
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+
+      const body = {
+        operationId:
+          decision === "CONFIRM_PROJECT_USE"
+            ? "00000000-0000-4000-8000-0000000000c1"
+            : "00000000-0000-4000-8000-0000000000c2",
+        correlationId,
+        expectedVersion: 1,
+        decision,
+      };
+
+      const result = await updateProjectAssetRights(projectId, assetId, body, {
+        ...deps(),
+        fetchImpl,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.asset.rightsState).toBe(expectedRightsState[decision]);
+      }
+      const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(
+        `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/rights`,
+      );
+      expect(init.method).toBe("POST");
+      expect(JSON.parse(String(init.body))).toEqual(body);
+    }
+  });
+
+  it("rejects malformed asset success payloads as internal_error", async () => {
+    const { listProjectAssets, completeProjectAssetUpload } = await import(
+      "./gateway"
+    );
+
+    const listFetch = mockFetch(
+      new Response(JSON.stringify({ ok: true, projectId: "bad", assets: [] }), {
+        status: 200,
+      }),
+    );
+    const listResult = await listProjectAssets(projectId, {
+      ...deps(),
+      fetchImpl: listFetch,
+    });
+    expect(listResult.ok).toBe(false);
+    if (!listResult.ok) expect(listResult.category).toBe("internal_error");
+
+    const completeFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          projectId,
+          asset: { ...asset, lifecycleState: "NOT_A_STATE" },
+        }),
+        { status: 200 },
+      ),
+    );
+    const completeResult = await completeProjectAssetUpload(
+      projectId,
+      assetId,
+      {
+        operationId: "00000000-0000-4000-8000-0000000000b7",
+        correlationId,
+        expectedVersion: 1,
+      },
+      { ...deps(), fetchImpl: completeFetch },
+    );
+    expect(completeResult.ok).toBe(false);
+    if (!completeResult.ok) {
+      expect(completeResult.category).toBe("internal_error");
+    }
+  });
+
+  it("does not require object_key on the customer asset projection", async () => {
+    const { projectAssetSchema } = await import("./contract");
+    const parsed = projectAssetSchema.parse(asset);
+    expect(parsed.id).toBe(assetId);
+    expect(parsed).not.toHaveProperty("object_key");
+    expect(
+      Object.keys(projectAssetSchema.shape).some((key) =>
+        key.toLowerCase().includes("object"),
+      ),
+    ).toBe(false);
+  });
+
+  it("drops any leaked object_key from a parsed asset projection", async () => {
+    const { listProjectAssets } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          projectId,
+          assets: [{ ...asset, object_key: "projects/secret/path.png" }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await listProjectAssets(projectId, { ...deps(), fetchImpl });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.assets[0]).not.toHaveProperty("object_key");
+      expect(JSON.stringify(result.data)).not.toContain("secret");
+    }
+  });
+
+  it("preserves frozen error categories across asset routes", async () => {
+    const {
+      listProjectAssets,
+      createProjectAssetUploadIntent,
+      completeProjectAssetUpload,
+      createProjectAssetReadIntent,
+      removeProjectAsset,
+      updateProjectAssetRights,
+    } = await import("./gateway");
+
+    const cases = [
+      ["not_found", 404],
+      ["permission_denied", 403],
+      ["invalid_input", 400],
+      ["stale_or_conflicting", 409],
+      ["already_completed", 409],
+      ["temporary_failure", 503],
+      ["internal_error", 500],
+      ["session_expired", 401],
+    ] as const;
+
+    for (const [category, status] of cases) {
+      // Each route consumes its own Response body, so build a fresh one per call.
+      const fetchImpl = vi.fn().mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({ ok: false, error: { category, message: "Hidden" } }),
+            { status },
+          ),
+      );
+      const gatewayDeps = { ...deps(), fetchImpl };
+
+      const results = [
+        await listProjectAssets(projectId, gatewayDeps),
+        await createProjectAssetUploadIntent(
+          projectId,
+          {
+            operationId: "00000000-0000-4000-8000-0000000000d1",
+            correlationId,
+            originalFilename: "logo.png",
+            contentType: "image/png",
+            byteSize: 1024,
+          },
+          gatewayDeps,
+        ),
+        await completeProjectAssetUpload(
+          projectId,
+          assetId,
+          {
+            operationId: "00000000-0000-4000-8000-0000000000d2",
+            correlationId,
+            expectedVersion: 1,
+          },
+          gatewayDeps,
+        ),
+        await createProjectAssetReadIntent(
+          projectId,
+          assetId,
+          {
+            operationId: "00000000-0000-4000-8000-0000000000d3",
+            correlationId,
+          },
+          gatewayDeps,
+        ),
+        await removeProjectAsset(
+          projectId,
+          assetId,
+          {
+            operationId: "00000000-0000-4000-8000-0000000000d4",
+            correlationId,
+            expectedVersion: 1,
+          },
+          gatewayDeps,
+        ),
+        await updateProjectAssetRights(
+          projectId,
+          assetId,
+          {
+            operationId: "00000000-0000-4000-8000-0000000000d5",
+            correlationId,
+            expectedVersion: 1,
+            decision: "CONFIRM_PROJECT_USE",
+          },
+          gatewayDeps,
+        ),
+      ];
+
+      for (const result of results) {
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.category).toBe(category);
+          expect(result.message).toBe("Hidden");
+        }
+      }
+    }
+  });
+
+  it("returns auth_required for asset routes without an access token", async () => {
+    const { listProjectAssets, updateProjectAssetRights } = await import(
+      "./gateway"
+    );
+    const fetchImpl = mockFetch(new Response("{}", { status: 200 }));
+
+    const listResult = await listProjectAssets(projectId, {
+      fetchImpl,
+      getAccessToken: async () => null,
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    const rightsResult = await updateProjectAssetRights(
+      projectId,
+      assetId,
+      {
+        operationId: "00000000-0000-4000-8000-0000000000d6",
+        correlationId,
+        expectedVersion: 1,
+        decision: "DO_NOT_USE",
+      },
+      {
+        fetchImpl,
+        getAccessToken: async () => null,
+        getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+      },
+    );
+
+    for (const result of [listResult, rightsResult]) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.category).toBe("auth_required");
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a tampered rights decision before calling Factory", async () => {
+    const { updateProjectAssetRights } = await import("./gateway");
+    const fetchImpl = mockFetch(new Response("{}", { status: 200 }));
+
+    await expect(
+      updateProjectAssetRights(
+        projectId,
+        assetId,
+        {
+          operationId: "00000000-0000-4000-8000-0000000000d7",
+          correlationId,
+          expectedVersion: 1,
+          decision: "TAMPERED" as never,
+        },
+        { ...deps(), fetchImpl },
+      ),
+    ).rejects.toThrow();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("Project asset gateway", () => {
+  const projectId = "00000000-0000-4000-8000-000000000013";
+  const assetId = "00000000-0000-4000-8000-0000000000a1";
+  const op = "00000000-0000-4000-8000-0000000000b1";
+  const corr = "00000000-0000-4000-8000-0000000000b2";
+
+  const sampleAsset = {
+    id: assetId,
+    origin: "CUSTOMER_UPLOAD",
+    assetKind: "IMAGE",
+    lifecycleState: "AVAILABLE",
+    validationState: "VALID",
+    rightsState: "CUSTOMER_PROJECT_USE_AUTHORIZED",
+    originalFilename: "logo.png",
+    declaredContentType: "image/png",
+    declaredByteSize: 1024,
+    validatedContentType: "image/png",
+    validatedByteSize: 1024,
+    contentHash: null,
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    availableAt: "2026-01-01T00:00:00.000Z",
+    failedAt: null,
+  };
+
+  const deps = {
+    getAccessToken: async () => "access-token",
+    getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+  };
+
+  it("GETs project assets with exact path and bearer", async () => {
+    const { listProjectAssets } = await import("./gateway");
+    const body = { ok: true, projectId, assets: [sampleAsset] };
+    const fetchImpl = mockFetch(new Response(JSON.stringify(body), { status: 200 }));
+    const result = await listProjectAssets(projectId, { ...deps, fetchImpl });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`http://127.0.0.1:3001/api/v1/projects/${projectId}/assets`);
+    expect(init.method).toBe("GET");
+    expect(init.cache).toBe("no-store");
+    expect(init.headers).toMatchObject({ Authorization: "Bearer access-token" });
+    if (result.ok) {
+      expect(result.data.assets[0]).not.toHaveProperty("object_key");
+      expect(result.data.assets[0]).not.toHaveProperty("objectKey");
+    }
+  });
+
+  it("POSTs upload-intent with metadata-only body", async () => {
+    const { createProjectAssetUploadIntent } = await import("./gateway");
+    const success = {
+      ok: true,
+      replayed: false,
+      projectId,
+      asset: { ...sampleAsset, lifecycleState: "PENDING_UPLOAD", validationState: "UNVALIDATED", availableAt: null },
+      upload: {
+        provider: "SUPABASE",
+        bucket: "fp-project-assets",
+        path: "projects/p/a/object",
+        token: "signed-token",
+        expiresAt: "2026-01-01T00:05:00.000Z",
+      },
+    };
+    const fetchImpl = mockFetch(new Response(JSON.stringify(success), { status: 200 }));
+    const request = {
+      operationId: op,
+      correlationId: corr,
+      originalFilename: "logo.png",
+      contentType: "image/png",
+      byteSize: 1024,
+    };
+    const result = await createProjectAssetUploadIntent(projectId, request, {
+      ...deps,
+      fetchImpl,
+    });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/upload-intent`,
+    );
+    expect(JSON.parse(String(init.body))).toEqual(request);
+    expect(JSON.parse(String(init.body))).not.toHaveProperty("file");
+  });
+
+  it("POSTs complete, read-intent, remove, and rights with exact paths", async () => {
+    const {
+      completeProjectAssetUpload,
+      createProjectAssetReadIntent,
+      removeProjectAsset,
+      updateProjectAssetRights,
+    } = await import("./gateway");
+
+    const completeBody = { operationId: op, correlationId: corr, expectedVersion: 1 };
+    const completeFetch = mockFetch(
+      new Response(JSON.stringify({ ok: true, replayed: false, projectId, asset: sampleAsset }), {
+        status: 200,
+      }),
+    );
+    await completeProjectAssetUpload(projectId, assetId, completeBody, {
+      ...deps,
+      fetchImpl: completeFetch,
+    });
+    expect((completeFetch.mock.calls[0] as [string])[0]).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/complete`,
+    );
+    expect(JSON.parse(String((completeFetch.mock.calls[0] as [string, RequestInit])[1].body))).toEqual(
+      completeBody,
+    );
+
+    const readBody = { operationId: op, correlationId: corr };
+    const readFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          projectId,
+          assetId,
+          read: { url: "https://signed.example/read", expiresAt: "2026-01-01T00:05:00.000Z" },
+        }),
+        { status: 200 },
+      ),
+    );
+    const readResult = await createProjectAssetReadIntent(projectId, assetId, readBody, {
+      ...deps,
+      fetchImpl: readFetch,
+    });
+    expect(readResult.ok).toBe(true);
+    expect((readFetch.mock.calls[0] as [string])[0]).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/read-intent`,
+    );
+
+    const removeFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          projectId,
+          asset: { ...sampleAsset, lifecycleState: "REMOVED", version: 3 },
+        }),
+        { status: 200 },
+      ),
+    );
+    await removeProjectAsset(
+      projectId,
+      assetId,
+      { operationId: op, correlationId: corr, expectedVersion: 1 },
+      { ...deps, fetchImpl: removeFetch },
+    );
+    expect((removeFetch.mock.calls[0] as [string])[0]).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/remove`,
+    );
+
+    for (const decision of ["CONFIRM_PROJECT_USE", "DO_NOT_USE"] as const) {
+      const rightsFetch = mockFetch(
+        new Response(
+          JSON.stringify({ ok: true, replayed: false, projectId, asset: sampleAsset }),
+          { status: 200 },
+        ),
+      );
+      const rightsBody = {
+        operationId: op,
+        correlationId: corr,
+        expectedVersion: 1,
+        decision,
+      };
+      await updateProjectAssetRights(projectId, assetId, rightsBody, {
+        ...deps,
+        fetchImpl: rightsFetch,
+      });
+      expect((rightsFetch.mock.calls[0] as [string])[0]).toBe(
+        `http://127.0.0.1:3001/api/v1/projects/${projectId}/assets/${assetId}/rights`,
+      );
+      expect(
+        JSON.parse(String((rightsFetch.mock.calls[0] as [string, RequestInit])[1].body)),
+      ).toEqual(rightsBody);
+    }
+  });
+
+  it("rejects malformed asset list as internal_error", async () => {
+    const { listProjectAssets } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(JSON.stringify({ ok: true, projectId: "bad" }), { status: 200 }),
+    );
+    const result = await listProjectAssets(projectId, { ...deps, fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.category).toBe("internal_error");
+  });
+
+  it("returns auth_required without calling fetch when no token", async () => {
+    const { listProjectAssets } = await import("./gateway");
+    const fetchImpl = mockFetch(new Response("{}", { status: 200 }));
+    const result = await listProjectAssets(projectId, {
+      fetchImpl,
+      getAccessToken: async () => null,
+      getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.category).toBe("auth_required");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

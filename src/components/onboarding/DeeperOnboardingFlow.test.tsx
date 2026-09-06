@@ -33,6 +33,22 @@ vi.mock("./ResearchFindingsPanel", () => ({
   ),
 }));
 
+vi.mock("./ProjectAssetsPanel", () => ({
+  ProjectAssetsPanel: (props: {
+    assets: { status: string; assets?: unknown[] };
+  }) => (
+    <div
+      data-testid="project-assets-panel"
+      data-asset-status={props.assets.status}
+      data-asset-count={
+        props.assets.status === "ready" ? String(props.assets.assets?.length ?? 0) : "na"
+      }
+    >
+      Project files
+    </div>
+  ),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush }),
 }));
@@ -66,6 +82,11 @@ const emptyResearch = {
     sources: [],
     candidates: [],
   },
+};
+
+const emptyAssets = {
+  status: "ready" as const,
+  assets: [] as [],
 };
 
 function emptySections(
@@ -162,6 +183,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -173,7 +195,8 @@ describe("DeeperOnboardingFlow", () => {
     expect(screen.getByText("Taco Shop")).toBeInTheDocument();
     expect(screen.getByText("want to sell more tacos")).toBeInTheDocument();
     expect(screen.getByTestId("research-findings-panel")).toBeInTheDocument();
-    expect(screen.queryByText(/upload|B3/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Website Plan|Quote|payment|B3/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-assets-panel")).not.toBeInTheDocument();
   });
 
   it("hydrates saved answers and opens the first incomplete section", () => {
@@ -181,6 +204,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(true)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -221,6 +245,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -250,6 +275,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -275,6 +301,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -301,6 +328,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -348,6 +376,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -375,6 +404,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -405,6 +435,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -451,6 +482,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -489,6 +521,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -512,6 +545,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(true)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -534,6 +568,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -570,6 +605,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -597,6 +633,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -643,12 +680,14 @@ describe("DeeperOnboardingFlow", () => {
         ],
       }),
       research: emptyResearch,
+      assets: emptyAssets,
     });
 
     render(
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -680,6 +719,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -711,6 +751,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -769,6 +810,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -826,6 +868,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -887,6 +930,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -944,6 +988,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -1061,6 +1106,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding({
           sections: emptySections({
@@ -1102,6 +1148,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -1130,6 +1177,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -1177,6 +1225,7 @@ describe("DeeperOnboardingFlow", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={emptyResearch}
+        assets={emptyAssets}
         resume={makeResume(false)}
         onboarding={makeOnboarding()}
         debounceMs={50}
@@ -1196,5 +1245,75 @@ describe("DeeperOnboardingFlow", () => {
     });
     expect(saveOnboardingSectionAction).not.toHaveBeenCalled();
     expect(within(offerings!).getByDisplayValue("Only notes")).toBeInTheDocument();
+  });
+
+  it("shows ProjectAssetsPanel on Brand and Content but not Business or Goals", async () => {
+    saveOnboardingSectionAction.mockResolvedValue(successSave({ sectionKey: "BRAND", version: 1 }));
+
+    render(
+      <DeeperOnboardingFlow
+        projectId={projectId}
+        research={emptyResearch}
+        assets={{
+          status: "ready",
+          assets: [
+            {
+              id: "00000000-0000-4000-8000-0000000000a1",
+              origin: "CUSTOMER_UPLOAD",
+              assetKind: "IMAGE",
+              lifecycleState: "AVAILABLE",
+              validationState: "VALID",
+              rightsState: "CUSTOMER_PROJECT_USE_AUTHORIZED",
+              originalFilename: "logo.png",
+              declaredContentType: "image/png",
+              declaredByteSize: 1024,
+              validatedContentType: "image/png",
+              validatedByteSize: 1024,
+              contentHash: null,
+              version: 1,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              availableAt: "2026-01-01T00:00:00.000Z",
+              failedAt: null,
+            },
+          ],
+        }}
+        resume={makeResume(false)}
+        onboarding={makeOnboarding({
+          sections: emptySections({
+            BUSINESS: { status: "COMPLETE", version: 1 },
+          }),
+        })}
+        debounceMs={50}
+      />,
+    );
+
+    // Starts on Brand (first incomplete)
+    expect(screen.getByRole("heading", { name: "Brand" })).toBeInTheDocument();
+    expect(screen.getByTestId("project-assets-panel")).toHaveAttribute(
+      "data-asset-count",
+      "1",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Content/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Content" })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("project-assets-panel")).toHaveAttribute(
+      "data-asset-count",
+      "1",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Business/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Business" })).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("project-assets-panel")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Goals/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Goals" })).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("project-assets-panel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("research-findings-panel")).toBeInTheDocument();
   });
 });

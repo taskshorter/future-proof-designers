@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { OnboardingFieldEditor } from "@/components/onboarding/FieldEditors";
+import { ProjectAssetsPanel } from "@/components/onboarding/ProjectAssetsPanel";
 import { ResearchFindingsPanel } from "@/components/onboarding/ResearchFindingsPanel";
 import { buildSignInPath } from "@/lib/auth/safe-return-path";
 import type {
@@ -16,6 +17,7 @@ import type {
 import {
   reloadProjectOnboardingAction,
   saveOnboardingSectionAction,
+  type ProjectAssetsLoadState,
   type ResearchLoadState,
 } from "@/lib/onboarding/actions";
 import {
@@ -228,6 +230,7 @@ type DeeperOnboardingFlowProps = {
   resume: ProjectResumeDetail;
   onboarding: ProjectOnboardingState;
   research: ResearchLoadState;
+  assets: ProjectAssetsLoadState;
   debounceMs?: number;
 };
 
@@ -236,11 +239,13 @@ export function DeeperOnboardingFlow({
   resume,
   onboarding,
   research: initialResearch,
+  assets: initialAssets,
   debounceMs = AUTOSAVE_DEBOUNCE_MS,
 }: DeeperOnboardingFlowProps) {
   const router = useRouter();
   const [sections, setSections] = useState(() => hydrateFromOnboarding(onboarding));
   const [research, setResearch] = useState<ResearchLoadState>(initialResearch);
+  const [assets, setAssets] = useState<ProjectAssetsLoadState>(initialAssets);
   const [authoritativeSyncBusy, setAuthoritativeSyncBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<OnboardingSectionKey>(() =>
     initialActiveSection(onboarding.sections),
@@ -681,6 +686,7 @@ export function DeeperOnboardingFlow({
     sectionsRef.current = next;
     setSections(next);
     setResearch(result.research);
+    setAssets(result.assets);
     lastRetryIntent.current = null;
     setSaveStatus("saved");
     setRetryable(false);
@@ -957,6 +963,14 @@ export function DeeperOnboardingFlow({
           {active.fieldError ? <p className="form-error">{active.fieldError}</p> : null}
         </section>
       )}
+
+      {activeSection === "BRAND" || activeSection === "CONTENT" ? (
+        <ProjectAssetsPanel
+          projectId={projectId}
+          assets={assets}
+          onAssetsChange={setAssets}
+        />
+      ) : null}
 
       <div className="button-row">
         <button
