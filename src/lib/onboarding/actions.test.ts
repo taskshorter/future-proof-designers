@@ -8,6 +8,12 @@ const acceptResearchCandidate = vi.fn();
 const editResearchCandidate = vi.fn();
 const rejectResearchCandidate = vi.fn();
 const saveProjectOnboardingSection = vi.fn();
+const listProjectAssets = vi.fn();
+const createProjectAssetUploadIntent = vi.fn();
+const completeProjectAssetUpload = vi.fn();
+const createProjectAssetReadIntent = vi.fn();
+const removeProjectAsset = vi.fn();
+const updateProjectAssetRights = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   getVerifiedAccessToken: () => getVerifiedAccessToken(),
@@ -22,6 +28,15 @@ vi.mock("@/lib/factory/gateway", () => ({
   rejectResearchCandidate: (...args: unknown[]) => rejectResearchCandidate(...args),
   saveProjectOnboardingSection: (...args: unknown[]) =>
     saveProjectOnboardingSection(...args),
+  listProjectAssets: (...args: unknown[]) => listProjectAssets(...args),
+  createProjectAssetUploadIntent: (...args: unknown[]) =>
+    createProjectAssetUploadIntent(...args),
+  completeProjectAssetUpload: (...args: unknown[]) =>
+    completeProjectAssetUpload(...args),
+  createProjectAssetReadIntent: (...args: unknown[]) =>
+    createProjectAssetReadIntent(...args),
+  removeProjectAsset: (...args: unknown[]) => removeProjectAsset(...args),
+  updateProjectAssetRights: (...args: unknown[]) => updateProjectAssetRights(...args),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,9 +46,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 import {
+  completeProjectAssetUploadAction,
+  createProjectAssetReadIntentAction,
+  createProjectAssetUploadIntentAction,
   loadProjectOnboardingPageData,
   reconcileResearchCandidateAction,
+  removeProjectAssetAction,
   saveOnboardingSectionAction,
+  updateProjectAssetRightsAction,
 } from "./actions";
 import { mapFactoryCategoryToUserMessage } from "@/lib/factory/contract";
 
@@ -92,6 +112,10 @@ describe("onboarding actions", () => {
       ok: true,
       data: { ok: true, projectId, runs: [], sources: [], candidates: [] },
     });
+    listProjectAssets.mockResolvedValue({
+      ok: true,
+      data: { ok: true, projectId, assets: [] },
+    });
   });
 
   it("loads resume and onboarding together", async () => {
@@ -104,6 +128,7 @@ describe("onboarding actions", () => {
       expect(result.resume.intake?.hasExistingWebsite).toBe(false);
       expect(result.onboarding.sections).toHaveLength(5);
       expect(result.research.status).toBe("ready");
+      expect(result.assets.status).toBe("ready");
     }
   });
 
@@ -255,4 +280,201 @@ describe("onboarding actions", () => {
     expect(editResearchCandidate).not.toHaveBeenCalled();
     expect(rejectResearchCandidate).not.toHaveBeenCalled();
   });
+
+
+  it("keeps asset list failures nonfatal for page success", async () => {
+    getProjectResumeDetail.mockResolvedValue({ ok: true, data: resume });
+    getProjectOnboarding.mockResolvedValue({ ok: true, data: emptyOnboarding });
+    listProjectAssets.mockResolvedValue({
+      ok: false,
+      category: "temporary_failure",
+      message: "down",
+    });
+
+    const result = await loadProjectOnboardingPageData(projectId);
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.assets.status).toBe("unavailable");
+      if (result.assets.status === "unavailable") {
+        expect(result.assets.category).toBe("temporary_failure");
+      }
+    }
+  });
+
+  const sampleAsset = {
+    id: "00000000-0000-4000-8000-0000000000a1",
+    origin: "CUSTOMER_UPLOAD" as const,
+    assetKind: "IMAGE" as const,
+    lifecycleState: "AVAILABLE" as const,
+    validationState: "VALID" as const,
+    rightsState: "CUSTOMER_PROJECT_USE_AUTHORIZED" as const,
+    originalFilename: "logo.png",
+    declaredContentType: "image/png",
+    declaredByteSize: 1024,
+    validatedContentType: "image/png",
+    validatedByteSize: 1024,
+    contentHash: null,
+    version: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    availableAt: "2026-01-01T00:00:00.000Z",
+    failedAt: null,
+  };
+
+  it("upload-intent action forwards metadata only", async () => {
+    createProjectAssetUploadIntent.mockResolvedValue({
+      ok: true,
+      data: {
+        ok: true,
+        replayed: false,
+        projectId,
+        asset: { ...sampleAsset, lifecycleState: "PENDING_UPLOAD", validationState: "UNVALIDATED", availableAt: null },
+        upload: {
+          provider: "SUPABASE",
+          bucket: "fp-project-assets",
+          path: "p/a",
+          token: "tok",
+          expiresAt: null,
+        },
+      },
+    });
+    const result = await createProjectAssetUploadIntentAction({
+      projectId,
+      operationId: "00000000-0000-4000-8000-0000000000b1",
+      correlationId: "00000000-0000-4000-8000-0000000000b2",
+      originalFilename: "logo.png",
+      contentType: "image/png",
+      byteSize: 1024,
+    });
+    expect(result.ok).toBe(true);
+    expect(createProjectAssetUploadIntent).toHaveBeenCalledWith(
+      projectId,
+      {
+        operationId: "00000000-0000-4000-8000-0000000000b1",
+        correlationId: "00000000-0000-4000-8000-0000000000b2",
+        originalFilename: "logo.png",
+        contentType: "image/png",
+        byteSize: 1024,
+      },
+      expect.anything(),
+    );
+    const uploadCall = createProjectAssetUploadIntent.mock.calls[0];
+    expect(uploadCall).toBeDefined();
+    const body = uploadCall![1];
+    expect(body).not.toHaveProperty("file");
+    expect(body).not.toHaveProperty("blob");
+  });
+
+  it("complete action refreshes authoritative assets", async () => {
+    completeProjectAssetUpload.mockResolvedValue({
+      ok: true,
+      data: { ok: true, replayed: false, projectId, asset: sampleAsset },
+    });
+    listProjectAssets.mockResolvedValue({
+      ok: true,
+      data: { ok: true, projectId, assets: [sampleAsset] },
+    });
+    const result = await completeProjectAssetUploadAction({
+      projectId,
+      assetId: sampleAsset.id,
+      operationId: "00000000-0000-4000-8000-0000000000c1",
+      correlationId: "00000000-0000-4000-8000-0000000000c2",
+      expectedVersion: 1,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.assets).toEqual({ status: "ready", assets: [sampleAsset] });
+    }
+  });
+
+  it("remove stale_or_conflicting reloads assets", async () => {
+    removeProjectAsset.mockResolvedValue({
+      ok: false,
+      category: "stale_or_conflicting",
+      message: "stale",
+    });
+    listProjectAssets.mockResolvedValue({
+      ok: true,
+      data: { ok: true, projectId, assets: [sampleAsset] },
+    });
+    const result = await removeProjectAssetAction({
+      projectId,
+      assetId: sampleAsset.id,
+      operationId: "00000000-0000-4000-8000-0000000000d1",
+      correlationId: "00000000-0000-4000-8000-0000000000d2",
+      expectedVersion: 1,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.category).toBe("stale_or_conflicting");
+      expect(result.assets?.status).toBe("ready");
+    }
+  });
+
+  it("rights and read-intent actions forward exact fields", async () => {
+    updateProjectAssetRights.mockResolvedValue({
+      ok: true,
+      data: { ok: true, replayed: false, projectId, asset: sampleAsset },
+    });
+    listProjectAssets.mockResolvedValue({
+      ok: true,
+      data: { ok: true, projectId, assets: [sampleAsset] },
+    });
+    const rights = await updateProjectAssetRightsAction({
+      projectId,
+      assetId: sampleAsset.id,
+      operationId: "00000000-0000-4000-8000-0000000000e1",
+      correlationId: "00000000-0000-4000-8000-0000000000e2",
+      expectedVersion: 2,
+      decision: "CONFIRM_PROJECT_USE",
+    });
+    expect(rights.ok).toBe(true);
+    expect(updateProjectAssetRights).toHaveBeenCalledWith(
+      projectId,
+      sampleAsset.id,
+      expect.objectContaining({
+        expectedVersion: 2,
+        decision: "CONFIRM_PROJECT_USE",
+      }),
+      expect.anything(),
+    );
+
+    createProjectAssetReadIntent.mockResolvedValue({
+      ok: true,
+      data: {
+        ok: true,
+        replayed: false,
+        projectId,
+        assetId: sampleAsset.id,
+        read: { url: "https://signed.example/x", expiresAt: "2026-01-01T00:05:00.000Z" },
+      },
+    });
+    const read = await createProjectAssetReadIntentAction({
+      projectId,
+      assetId: sampleAsset.id,
+      operationId: "00000000-0000-4000-8000-0000000000f1",
+      correlationId: "00000000-0000-4000-8000-0000000000f2",
+    });
+    expect(read.ok).toBe(true);
+    const readCall = createProjectAssetReadIntent.mock.calls[0];
+    expect(readCall).toBeDefined();
+    expect(readCall![2]).not.toHaveProperty("expiresIn");
+  });
+
+  it("asset actions return sign-in path when session missing", async () => {
+    getVerifiedAccessToken.mockResolvedValue(null);
+    const result = await createProjectAssetUploadIntentAction({
+      projectId,
+      operationId: "00000000-0000-4000-8000-0000000000b1",
+      correlationId: "00000000-0000-4000-8000-0000000000b2",
+      originalFilename: "logo.png",
+      contentType: "image/png",
+      byteSize: 1024,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.category).toBe("auth_required");
+      expect(result.signInPath).toContain("/sign-in");
+    }
+  });
+
 });

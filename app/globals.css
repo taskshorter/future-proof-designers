@@ -371,6 +371,72 @@ button:focus-visible {
   cursor: pointer;
 }
 
+.project-assets-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.project-assets-header {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.project-assets-upload {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.project-assets-file-label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: fit-content;
+}
+
+.project-asset-list,
+.project-asset-job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.project-asset-row,
+.project-asset-job {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.project-asset-row.muted-row {
+  opacity: 0.7;
+}
+
+.project-asset-row.failed-row,
+.project-asset-row.pending-row {
+  opacity: 0.9;
+}
+
+.project-asset-main {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.project-asset-badge {
+  display: inline-block;
+  font-size: 0.9em;
+}
+
+.project-asset-rights {
+  display: grid;
+  gap: 0.75rem;
+}
+
 @media (max-width: 40rem) {
   .repeatable-row {
     grid-template-columns: 1fr;

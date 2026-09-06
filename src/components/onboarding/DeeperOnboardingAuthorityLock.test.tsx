@@ -52,7 +52,13 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("./ProjectAssetsPanel", () => ({
+  ProjectAssetsPanel: () => <div data-testid="project-assets-panel">Project files</div>,
+}));
+
 import { DeeperOnboardingFlow } from "./DeeperOnboardingFlow";
+
+const emptyAssets = { status: "ready" as const, assets: [] as [] };
 
 const projectId = "00000000-0000-4000-8000-000000000013";
 const runId = "00000000-0000-4000-8000-0000000000bb";
@@ -199,6 +205,7 @@ describe("DeeperOnboardingFlow authoritative sync lock", () => {
       <DeeperOnboardingFlow
         projectId={projectId}
         research={researchReady}
+        assets={emptyAssets}
         resume={makeResume()}
         onboarding={makeOnboarding()}
       />,

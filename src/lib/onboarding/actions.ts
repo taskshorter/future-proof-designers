@@ -8,6 +8,8 @@ import {
   type FactoryErrorCategory,
   type OnboardingSectionKey,
   type OnboardingWriteStatus,
+  type ProjectAsset,
+  type ProjectAssetRightsDecision,
   type ProjectOnboardingState,
   type ProjectResearchState,
   type ProjectResumeDetail,
@@ -17,12 +19,18 @@ import {
 } from "@/lib/factory/contract";
 import {
   acceptResearchCandidate,
+  completeProjectAssetUpload,
+  createProjectAssetReadIntent,
+  createProjectAssetUploadIntent,
   editResearchCandidate,
   getProjectOnboarding,
   getProjectResearch,
   getProjectResumeDetail,
+  listProjectAssets,
   rejectResearchCandidate,
+  removeProjectAsset,
   saveProjectOnboardingSection,
+  updateProjectAssetRights,
 } from "@/lib/factory/gateway";
 import { getVerifiedAccessToken } from "@/lib/supabase/server";
 import {
@@ -39,12 +47,21 @@ export type ResearchLoadState =
       message: string;
     };
 
+export type ProjectAssetsLoadState =
+  | { status: "ready"; assets: ProjectAsset[] }
+  | {
+      status: "unavailable";
+      category: FactoryErrorCategory;
+      message: string;
+    };
+
 export type OnboardingPageLoadResult =
   | {
       status: "success";
       resume: ProjectResumeDetail;
       onboarding: ProjectOnboardingState;
       research: ResearchLoadState;
+      assets: ProjectAssetsLoadState;
     }
   | { status: "reauth"; message: string; signInPath: string }
   | { status: "not_found" }
@@ -129,6 +146,20 @@ async function loadResearchNonfatal(
   return { status: "ready", data: result.data };
 }
 
+async function loadAssetsNonfatal(
+  projectId: string,
+): Promise<ProjectAssetsLoadState> {
+  const result = await listProjectAssets(projectId, await gatewayDeps());
+  if (!result.ok) {
+    return {
+      status: "unavailable",
+      category: result.category,
+      message: mapFactoryCategoryToUserMessage(result.category),
+    };
+  }
+  return { status: "ready", assets: result.data.assets };
+}
+
 export async function loadProjectOnboardingPageData(
   projectId: string,
 ): Promise<OnboardingPageLoadResult> {
@@ -140,10 +171,11 @@ export async function loadProjectOnboardingPageData(
   }
 
   const deps = await gatewayDeps();
-  const [resumeResult, onboardingResult, research] = await Promise.all([
+  const [resumeResult, onboardingResult, research, assets] = await Promise.all([
     getProjectResumeDetail(projectId, deps),
     getProjectOnboarding(projectId, deps),
     loadResearchNonfatal(projectId),
+    loadAssetsNonfatal(projectId),
   ]);
 
   if (!resumeResult.ok) {
@@ -193,6 +225,7 @@ export async function loadProjectOnboardingPageData(
     resume: resumeResult.data,
     onboarding: onboardingResult.data,
     research,
+    assets,
   };
 }
 
@@ -491,5 +524,364 @@ export async function reconcileResearchCandidateAction(input: {
     reconcile: mutateResult.data,
     onboarding: reload.onboarding,
     research: reload.research,
+  };
+}
+
+export type RefreshProjectAssetsResult =
+  | { ok: true; assets: ProjectAssetsLoadState }
+  | {
+      ok: false;
+      category: FactoryErrorCategory;
+      message: string;
+      signInPath?: string;
+    };
+
+export type AssetMutationActionResult =
+  | {
+      ok: true;
+      assets: ProjectAssetsLoadState;
+      // Mutating success payloads vary; callers that need upload capability
+      // use the dedicated upload-intent result type below.
+      data?: unknown;
+    }
+  | {
+      ok: false;
+      category: FactoryErrorCategory;
+      message: string;
+      signInPath?: string;
+      assets?: ProjectAssetsLoadState;
+    };
+
+export type CreateProjectAssetUploadIntentActionResult =
+  | {
+      ok: true;
+      asset: ProjectAsset;
+      upload: {
+        provider: "SUPABASE";
+        bucket: string;
+        path: string;
+        token: string;
+        expiresAt: string | null;
+      };
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      category: FactoryErrorCategory;
+      message: string;
+      signInPath?: string;
+      assets?: ProjectAssetsLoadState;
+    };
+
+export type CreateProjectAssetReadIntentActionResult =
+  | {
+      ok: true;
+      assetId: string;
+      read: { url: string; expiresAt: string };
+      replayed: boolean;
+    }
+  | {
+      ok: false;
+      category: FactoryErrorCategory;
+      message: string;
+      signInPath?: string;
+      assets?: ProjectAssetsLoadState;
+    };
+
+function authFailureResult(
+  projectId: string,
+  category: "auth_required" | "session_expired" = "auth_required",
+): {
+  ok: false;
+  category: FactoryErrorCategory;
+  message: string;
+  signInPath: string;
+} {
+  return {
+    ok: false,
+    category,
+    message: mapFactoryCategoryToUserMessage(category),
+    signInPath: buildSignInPath(onboardingReturnPath(projectId)),
+  };
+}
+
+export async function refreshProjectAssetsAction(
+  projectId: string,
+): Promise<RefreshProjectAssetsResult> {
+  const accessToken = await getVerifiedAccessToken();
+  if (!accessToken) {
+    return authFailureResult(projectId);
+  }
+
+  return {
+    ok: true,
+    assets: await loadAssetsNonfatal(projectId),
+  };
+}
+
+/**
+ * Metadata-only upload intent. Never accepts File/Blob/bytes.
+ */
+export async function createProjectAssetUploadIntentAction(input: {
+  projectId: string;
+  operationId: string;
+  correlationId: string;
+  originalFilename: string;
+  contentType: string;
+  byteSize: number;
+}): Promise<CreateProjectAssetUploadIntentActionResult> {
+  const accessToken = await getVerifiedAccessToken();
+  if (!accessToken) {
+    return authFailureResult(input.projectId);
+  }
+
+  const result = await createProjectAssetUploadIntent(
+    input.projectId,
+    {
+      operationId: input.operationId,
+      correlationId: input.correlationId,
+      originalFilename: input.originalFilename,
+      contentType: input.contentType,
+      byteSize: input.byteSize,
+    },
+    await gatewayDeps(),
+  );
+
+  if (!result.ok) {
+    if (
+      result.category === "auth_required" ||
+      result.category === "session_expired"
+    ) {
+      return authFailureResult(input.projectId, result.category);
+    }
+    if (result.category === "stale_or_conflicting") {
+      return {
+        ok: false,
+        category: result.category,
+        message: mapFactoryCategoryToUserMessage(result.category),
+        assets: await loadAssetsNonfatal(input.projectId),
+      };
+    }
+    return {
+      ok: false,
+      category: result.category,
+      message: mapFactoryCategoryToUserMessage(result.category),
+    };
+  }
+
+  return {
+    ok: true,
+    asset: result.data.asset,
+    upload: result.data.upload,
+    replayed: result.data.replayed,
+  };
+}
+
+export async function completeProjectAssetUploadAction(input: {
+  projectId: string;
+  assetId: string;
+  operationId: string;
+  correlationId: string;
+  expectedVersion: number;
+}): Promise<AssetMutationActionResult> {
+  const accessToken = await getVerifiedAccessToken();
+  if (!accessToken) {
+    return authFailureResult(input.projectId);
+  }
+
+  const result = await completeProjectAssetUpload(
+    input.projectId,
+    input.assetId,
+    {
+      operationId: input.operationId,
+      correlationId: input.correlationId,
+      expectedVersion: input.expectedVersion,
+    },
+    await gatewayDeps(),
+  );
+
+  if (!result.ok) {
+    if (
+      result.category === "auth_required" ||
+      result.category === "session_expired"
+    ) {
+      return authFailureResult(input.projectId, result.category);
+    }
+    if (result.category === "stale_or_conflicting") {
+      return {
+        ok: false,
+        category: result.category,
+        message: mapFactoryCategoryToUserMessage(result.category),
+        assets: await loadAssetsNonfatal(input.projectId),
+      };
+    }
+    return {
+      ok: false,
+      category: result.category,
+      message: mapFactoryCategoryToUserMessage(result.category),
+    };
+  }
+
+  return {
+    ok: true,
+    assets: await loadAssetsNonfatal(input.projectId),
+    data: result.data,
+  };
+}
+
+export async function createProjectAssetReadIntentAction(input: {
+  projectId: string;
+  assetId: string;
+  operationId: string;
+  correlationId: string;
+}): Promise<CreateProjectAssetReadIntentActionResult> {
+  const accessToken = await getVerifiedAccessToken();
+  if (!accessToken) {
+    return authFailureResult(input.projectId);
+  }
+
+  const result = await createProjectAssetReadIntent(
+    input.projectId,
+    input.assetId,
+    {
+      operationId: input.operationId,
+      correlationId: input.correlationId,
+    },
+    await gatewayDeps(),
+  );
+
+  if (!result.ok) {
+    if (
+      result.category === "auth_required" ||
+      result.category === "session_expired"
+    ) {
+      return authFailureResult(input.projectId, result.category);
+    }
+    if (result.category === "stale_or_conflicting") {
+      return {
+        ok: false,
+        category: result.category,
+        message: mapFactoryCategoryToUserMessage(result.category),
+        assets: await loadAssetsNonfatal(input.projectId),
+      };
+    }
+    return {
+      ok: false,
+      category: result.category,
+      message: mapFactoryCategoryToUserMessage(result.category),
+    };
+  }
+
+  return {
+    ok: true,
+    assetId: result.data.assetId,
+    read: result.data.read,
+    replayed: result.data.replayed,
+  };
+}
+
+export async function removeProjectAssetAction(input: {
+  projectId: string;
+  assetId: string;
+  operationId: string;
+  correlationId: string;
+  expectedVersion: number;
+}): Promise<AssetMutationActionResult> {
+  const accessToken = await getVerifiedAccessToken();
+  if (!accessToken) {
+    return authFailureResult(input.projectId);
+  }
+
+  const result = await removeProjectAsset(
+    input.projectId,
+    input.assetId,
+    {
+      operationId: input.operationId,
+      correlationId: input.correlationId,
+      expectedVersion: input.expectedVersion,
+    },
+    await gatewayDeps(),
+  );
+
+  if (!result.ok) {
+    if (
+      result.category === "auth_required" ||
+      result.category === "session_expired"
+    ) {
+      return authFailureResult(input.projectId, result.category);
+    }
+    if (result.category === "stale_or_conflicting") {
+      return {
+        ok: false,
+        category: result.category,
+        message: mapFactoryCategoryToUserMessage(result.category),
+        assets: await loadAssetsNonfatal(input.projectId),
+      };
+    }
+    return {
+      ok: false,
+      category: result.category,
+      message: mapFactoryCategoryToUserMessage(result.category),
+    };
+  }
+
+  return {
+    ok: true,
+    assets: await loadAssetsNonfatal(input.projectId),
+    data: result.data,
+  };
+}
+
+export async function updateProjectAssetRightsAction(input: {
+  projectId: string;
+  assetId: string;
+  operationId: string;
+  correlationId: string;
+  expectedVersion: number;
+  decision: ProjectAssetRightsDecision;
+}): Promise<AssetMutationActionResult> {
+  const accessToken = await getVerifiedAccessToken();
+  if (!accessToken) {
+    return authFailureResult(input.projectId);
+  }
+
+  const result = await updateProjectAssetRights(
+    input.projectId,
+    input.assetId,
+    {
+      operationId: input.operationId,
+      correlationId: input.correlationId,
+      expectedVersion: input.expectedVersion,
+      decision: input.decision,
+    },
+    await gatewayDeps(),
+  );
+
+  if (!result.ok) {
+    if (
+      result.category === "auth_required" ||
+      result.category === "session_expired"
+    ) {
+      return authFailureResult(input.projectId, result.category);
+    }
+    if (result.category === "stale_or_conflicting") {
+      return {
+        ok: false,
+        category: result.category,
+        message: mapFactoryCategoryToUserMessage(result.category),
+        assets: await loadAssetsNonfatal(input.projectId),
+      };
+    }
+    return {
+      ok: false,
+      category: result.category,
+      message: mapFactoryCategoryToUserMessage(result.category),
+    };
+  }
+
+  return {
+    ok: true,
+    assets: await loadAssetsNonfatal(input.projectId),
+    data: result.data,
   };
 }

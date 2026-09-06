@@ -348,3 +348,200 @@ export const rejectResearchCandidateSuccessSchema = z.object({
 export type RejectResearchCandidateSuccess = z.infer<
   typeof rejectResearchCandidateSuccessSchema
 >;
+
+/* -------------------------------------------------------------------------- */
+/* Project assets (Factory B2-F3 public contract)                              */
+/* -------------------------------------------------------------------------- */
+
+export const PROJECT_ASSET_ORIGINS = [
+  "CUSTOMER_UPLOAD",
+  "PUBLICLY_DISCOVERED",
+] as const;
+
+export const PROJECT_ASSET_KINDS = ["IMAGE", "DOCUMENT", "VIDEO"] as const;
+
+export const PROJECT_ASSET_LIFECYCLE_STATES = [
+  "PENDING_UPLOAD",
+  "AVAILABLE",
+  "FAILED",
+  "REMOVAL_PENDING",
+  "REMOVED",
+] as const;
+
+export const PROJECT_ASSET_VALIDATION_STATES = [
+  "UNVALIDATED",
+  "VALIDATING",
+  "VALID",
+  "INVALID",
+] as const;
+
+export const PROJECT_ASSET_RIGHTS_STATES = [
+  "CUSTOMER_PROJECT_USE_AUTHORIZED",
+  "REUSE_RIGHTS_UNCONFIRMED",
+  "CUSTOMER_CONFIRMED_PROJECT_USE",
+  "DO_NOT_USE",
+] as const;
+
+export const PROJECT_ASSET_RIGHTS_DECISIONS = [
+  "CONFIRM_PROJECT_USE",
+  "DO_NOT_USE",
+] as const;
+
+/** Safe customer ProjectAsset projection — never includes object_key. */
+export const projectAssetSchema = z.object({
+  id: z.string().uuid(),
+  origin: z.enum(PROJECT_ASSET_ORIGINS),
+  assetKind: z.enum(PROJECT_ASSET_KINDS),
+  lifecycleState: z.enum(PROJECT_ASSET_LIFECYCLE_STATES),
+  validationState: z.enum(PROJECT_ASSET_VALIDATION_STATES),
+  rightsState: z.enum(PROJECT_ASSET_RIGHTS_STATES),
+  originalFilename: z.string(),
+  declaredContentType: z.string(),
+  declaredByteSize: z.number().int().nonnegative(),
+  validatedContentType: z.string().nullable(),
+  validatedByteSize: z.number().int().nonnegative().nullable(),
+  contentHash: z.string().nullable(),
+  version: z.number().int().positive(),
+  createdAt: z.string(),
+  availableAt: z.string().nullable(),
+  failedAt: z.string().nullable(),
+});
+
+export type ProjectAsset = z.infer<typeof projectAssetSchema>;
+
+export const listProjectAssetsSuccessSchema = z.object({
+  ok: z.literal(true),
+  projectId: z.string().uuid(),
+  assets: z.array(projectAssetSchema),
+});
+
+export type ListProjectAssetsSuccess = z.infer<typeof listProjectAssetsSuccessSchema>;
+
+export const projectAssetUploadCapabilitySchema = z.object({
+  provider: z.literal("SUPABASE"),
+  bucket: z.string().min(1),
+  path: z.string().min(1),
+  token: z.string().min(1),
+  expiresAt: z.string().nullable(),
+});
+
+export type ProjectAssetUploadCapability = z.infer<
+  typeof projectAssetUploadCapabilitySchema
+>;
+
+export const createProjectAssetUploadIntentRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  originalFilename: z.string().min(1),
+  contentType: z.string().min(1),
+  byteSize: z.number().int().positive(),
+});
+
+export type CreateProjectAssetUploadIntentRequest = z.infer<
+  typeof createProjectAssetUploadIntentRequestSchema
+>;
+
+export const createProjectAssetUploadIntentSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  asset: projectAssetSchema,
+  upload: projectAssetUploadCapabilitySchema,
+});
+
+export type CreateProjectAssetUploadIntentSuccess = z.infer<
+  typeof createProjectAssetUploadIntentSuccessSchema
+>;
+
+export const completeProjectAssetUploadRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+});
+
+export type CompleteProjectAssetUploadRequest = z.infer<
+  typeof completeProjectAssetUploadRequestSchema
+>;
+
+export const completeProjectAssetUploadSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  asset: projectAssetSchema,
+});
+
+export type CompleteProjectAssetUploadSuccess = z.infer<
+  typeof completeProjectAssetUploadSuccessSchema
+>;
+
+export const createProjectAssetReadIntentRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+});
+
+export type CreateProjectAssetReadIntentRequest = z.infer<
+  typeof createProjectAssetReadIntentRequestSchema
+>;
+
+export const projectAssetReadCapabilitySchema = z.object({
+  url: z.string().min(1),
+  expiresAt: z.string().min(1),
+});
+
+export type ProjectAssetReadCapability = z.infer<
+  typeof projectAssetReadCapabilitySchema
+>;
+
+export const createProjectAssetReadIntentSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  assetId: z.string().uuid(),
+  read: projectAssetReadCapabilitySchema,
+});
+
+export type CreateProjectAssetReadIntentSuccess = z.infer<
+  typeof createProjectAssetReadIntentSuccessSchema
+>;
+
+export const removeProjectAssetRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+});
+
+export type RemoveProjectAssetRequest = z.infer<typeof removeProjectAssetRequestSchema>;
+
+export const removeProjectAssetSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  asset: projectAssetSchema,
+});
+
+export type RemoveProjectAssetSuccess = z.infer<typeof removeProjectAssetSuccessSchema>;
+
+export const updateProjectAssetRightsRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+  decision: z.enum(PROJECT_ASSET_RIGHTS_DECISIONS),
+});
+
+export type UpdateProjectAssetRightsRequest = z.infer<
+  typeof updateProjectAssetRightsRequestSchema
+>;
+
+export type ProjectAssetRightsDecision =
+  (typeof PROJECT_ASSET_RIGHTS_DECISIONS)[number];
+
+export const updateProjectAssetRightsSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  projectId: z.string().uuid(),
+  asset: projectAssetSchema,
+});
+
+export type UpdateProjectAssetRightsSuccess = z.infer<
+  typeof updateProjectAssetRightsSuccessSchema
+>;
