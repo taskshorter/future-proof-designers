@@ -3,8 +3,12 @@ import "server-only";
 import { getServerEnv } from "@/lib/env/get-server-env";
 import {
   acceptResearchCandidateRequestSchema,
+  assembleWebsitePlanRequestSchema,
+  assembleWebsitePlanSuccessSchema,
   completeProjectAssetUploadRequestSchema,
   completeProjectAssetUploadSuccessSchema,
+  confirmWebsitePlanRequestSchema,
+  confirmWebsitePlanSuccessSchema,
   createProjectAssetReadIntentRequestSchema,
   createProjectAssetReadIntentSuccessSchema,
   createProjectAssetUploadIntentRequestSchema,
@@ -13,6 +17,7 @@ import {
   factoryErrorResponseSchema,
   getProjectOnboardingSuccessSchema,
   getProjectResearchSuccessSchema,
+  getWebsitePlanSuccessSchema,
   listProjectAssetsSuccessSchema,
   projectResumeDetailSuccessSchema,
   projectResumeListSuccessSchema,
@@ -23,13 +28,19 @@ import {
   rejectResearchCandidateSuccessSchema,
   removeProjectAssetRequestSchema,
   removeProjectAssetSuccessSchema,
+  reviseWebsitePlanRequestSchema,
+  reviseWebsitePlanSuccessSchema,
   saveProjectOnboardingSectionRequestSchema,
   saveProjectOnboardingSectionSuccessSchema,
   updateProjectAssetRightsRequestSchema,
   updateProjectAssetRightsSuccessSchema,
   type AcceptResearchCandidateRequest,
+  type AssembleWebsitePlanRequest,
+  type AssembleWebsitePlanSuccess,
   type CompleteProjectAssetUploadRequest,
   type CompleteProjectAssetUploadSuccess,
+  type ConfirmWebsitePlanRequest,
+  type ConfirmWebsitePlanSuccess,
   type CreateProjectAssetReadIntentRequest,
   type CreateProjectAssetReadIntentSuccess,
   type CreateProjectAssetUploadIntentRequest,
@@ -37,6 +48,7 @@ import {
   type EditResearchCandidateRequest,
   type FactoryErrorCategory,
   type FactoryGatewayResult,
+  type GetWebsitePlanSuccess,
   type ListProjectAssetsSuccess,
   type OnboardingSectionKey,
   type ProjectOnboardingState,
@@ -50,6 +62,8 @@ import {
   type RejectResearchCandidateSuccess,
   type RemoveProjectAssetRequest,
   type RemoveProjectAssetSuccess,
+  type ReviseWebsitePlanRequest,
+  type ReviseWebsitePlanSuccess,
   type SaveProjectOnboardingSectionRequest,
   type SaveProjectOnboardingSectionSuccess,
   type UpdateProjectAssetRightsRequest,
@@ -401,5 +415,69 @@ export async function updateProjectAssetRights(
     },
     deps,
     (payload) => updateProjectAssetRightsSuccessSchema.parse(payload),
+  );
+}
+
+export async function getWebsitePlan(
+  projectId: string,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<GetWebsitePlanSuccess>> {
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/website-plan`,
+    { method: "GET" },
+    deps,
+    (payload) => getWebsitePlanSuccessSchema.parse(payload),
+  );
+}
+
+export async function assembleWebsitePlan(
+  projectId: string,
+  request: AssembleWebsitePlanRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<AssembleWebsitePlanSuccess>> {
+  const normalized = assembleWebsitePlanRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/website-plan/assemble`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => assembleWebsitePlanSuccessSchema.parse(payload),
+  );
+}
+
+export async function reviseWebsitePlan(
+  projectId: string,
+  request: ReviseWebsitePlanRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ReviseWebsitePlanSuccess>> {
+  const normalized = reviseWebsitePlanRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/website-plan/revisions`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => reviseWebsitePlanSuccessSchema.parse(payload),
+  );
+}
+
+export async function confirmWebsitePlan(
+  projectId: string,
+  planVersionId: string,
+  request: ConfirmWebsitePlanRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ConfirmWebsitePlanSuccess>> {
+  const normalized = confirmWebsitePlanRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/website-plan/${encodeURIComponent(planVersionId)}/confirm`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => confirmWebsitePlanSuccessSchema.parse(payload),
   );
 }

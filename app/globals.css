@@ -437,6 +437,32 @@ button:focus-visible {
   gap: 0.75rem;
 }
 
+.website-plan-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.website-plan-item {
+  display: grid;
+  gap: 0.5rem;
+  padding-block: 0.5rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.website-plan-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.website-plan-editor {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
 @media (max-width: 40rem) {
   .repeatable-row {
     grid-template-columns: 1fr;

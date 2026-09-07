@@ -864,11 +864,18 @@ export function DeeperOnboardingFlow({
         <section className="panel">
           <h2>Onboarding answers saved</h2>
           <p>
-            Your deeper onboarding answers are saved. You can return to the project or portal
-            any time.
+            Your deeper onboarding answers are saved. Next, review your Website
+            Plan when you are ready. Opening the Website Plan page does not
+            create a Plan automatically.
           </p>
           <div className="button-row">
-            <Link className="button-link" href={`/portal/projects/${projectId}`}>
+            <Link
+              className="button-link"
+              href={`/portal/projects/${projectId}/plan`}
+            >
+              Review Website Plan
+            </Link>
+            <Link className="button-link secondary" href={`/portal/projects/${projectId}`}>
               Back to project
             </Link>
             <Link className="button-link secondary" href="/portal">

@@ -545,3 +545,225 @@ export const updateProjectAssetRightsSuccessSchema = z.object({
 export type UpdateProjectAssetRightsSuccess = z.infer<
   typeof updateProjectAssetRightsSuccessSchema
 >;
+
+/* -------------------------------------------------------------------------- */
+/* B3-P1 Website Plan customer contract (mirrors merged Factory B3-F1)         */
+/* -------------------------------------------------------------------------- */
+
+export const WEBSITE_PLAN_PACKAGE_CATEGORIES = [
+  "ESSENTIAL",
+  "BUSINESS",
+  "CUSTOM",
+] as const;
+
+export type WebsitePlanPackageCategory =
+  (typeof WEBSITE_PLAN_PACKAGE_CATEGORIES)[number];
+
+export const WEBSITE_PLAN_PAGE_ORIGINS = [
+  "FP_RECOMMENDED",
+  "CUSTOMER_ADDED",
+  "CUSTOMER_REMOVED_FROM_RECOMMENDATION",
+] as const;
+
+export type WebsitePlanPageOrigin = (typeof WEBSITE_PLAN_PAGE_ORIGINS)[number];
+
+export const WEBSITE_PLAN_MODULE_INCLUSIONS = [
+  "RECOMMENDED",
+  "INCLUDED",
+  "DECLINED_BY_CUSTOMER",
+] as const;
+
+export type WebsitePlanModuleInclusion =
+  (typeof WEBSITE_PLAN_MODULE_INCLUSIONS)[number];
+
+export const WEBSITE_PLAN_ASSEMBLY_STATUSES = ["INCOMPLETE", "READY"] as const;
+
+export type WebsitePlanAssemblyStatus =
+  (typeof WEBSITE_PLAN_ASSEMBLY_STATUSES)[number];
+
+export const WEBSITE_PLAN_MODULE_INTENTS = ["SELECT", "DECLINE"] as const;
+
+export type WebsitePlanModuleIntent =
+  (typeof WEBSITE_PLAN_MODULE_INTENTS)[number];
+
+export const WEBSITE_PLAN_CONFIRM_REQUIRED_ACTIONS = ["SYSTEM", "OWNER"] as const;
+
+export type WebsitePlanConfirmRequiredAction =
+  (typeof WEBSITE_PLAN_CONFIRM_REQUIRED_ACTIONS)[number];
+
+/** Initial canonical approved customer module ID from Factory B3-F1. */
+export const CANONICAL_WEBSITE_PLAN_MODULE_KEYS = ["booklocal"] as const;
+
+export type CanonicalWebsitePlanModuleKey =
+  (typeof CANONICAL_WEBSITE_PLAN_MODULE_KEYS)[number];
+
+const websitePlanPageKeySchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/i);
+
+export const websitePlanPageSchema = z.object({
+  key: websitePlanPageKeySchema,
+  title: z.string().min(1).max(2000),
+  origin: z.enum(WEBSITE_PLAN_PAGE_ORIGINS),
+  notes: z.string().max(2000).optional(),
+});
+
+export const websitePlanModuleSchema = z.object({
+  moduleKey: z.string().min(1).max(64),
+  inclusion: z.enum(WEBSITE_PLAN_MODULE_INCLUSIONS),
+});
+
+export const websitePlanAssetReferenceSchema = z.object({
+  assetId: z.string().uuid(),
+});
+
+export const websitePlanProjectionSchema = z.object({
+  projectId: z.string().uuid(),
+  planId: z.string().uuid(),
+  planVersion: z.number().int().positive(),
+  planVersionId: z.string().uuid(),
+  headerVersion: z.number().int().nonnegative(),
+  confirmed: z.boolean(),
+  requiredAction: z.string().optional(),
+  businessUnderstanding: z.string(),
+  websiteGoals: z.array(z.string()),
+  packageCategory: z.enum(WEBSITE_PLAN_PACKAGE_CATEGORIES).nullable(),
+  packageRationale: z.string(),
+  pages: z.array(websitePlanPageSchema),
+  requiredFunctionality: z.array(z.string()),
+  modules: z.array(websitePlanModuleSchema),
+  customRequirements: z.array(z.string()),
+  designDirection: z.string(),
+  availableContentNotes: z.string(),
+  missingContentNotes: z.string(),
+  assetReferences: z.array(websitePlanAssetReferenceSchema),
+  customerFacingAssumptions: z.array(z.string()),
+  customerSafeAttention: z.array(z.string()),
+  assemblyStatus: z.enum(WEBSITE_PLAN_ASSEMBLY_STATUSES),
+  classificationAttention: z.array(z.string()),
+});
+
+export type WebsitePlanProjection = z.infer<typeof websitePlanProjectionSchema>;
+
+export const getWebsitePlanSuccessSchema = z.object({
+  ok: z.literal(true),
+  plan: websitePlanProjectionSchema.nullable(),
+});
+
+export type GetWebsitePlanSuccess = z.infer<typeof getWebsitePlanSuccessSchema>;
+
+export const assembleWebsitePlanRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+});
+
+export type AssembleWebsitePlanRequest = z.infer<
+  typeof assembleWebsitePlanRequestSchema
+>;
+
+export const assembleWebsitePlanSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  plan: websitePlanProjectionSchema,
+});
+
+export type AssembleWebsitePlanSuccess = z.infer<
+  typeof assembleWebsitePlanSuccessSchema
+>;
+
+export const websitePlanRevisionSchema = z
+  .object({
+    addPages: z
+      .array(
+        z
+          .object({
+            requestKey: websitePlanPageKeySchema.optional(),
+            title: z.string().min(1).max(2000),
+            notes: z.string().max(2000).optional(),
+          })
+          .strict(),
+      )
+      .max(50)
+      .optional(),
+    removeRecommendedPages: z
+      .array(z.object({ pageKey: websitePlanPageKeySchema }).strict())
+      .max(50)
+      .optional(),
+    restoreRecommendedPages: z
+      .array(z.object({ pageKey: websitePlanPageKeySchema }).strict())
+      .max(50)
+      .optional(),
+    editPages: z
+      .array(
+        z
+          .object({
+            pageKey: websitePlanPageKeySchema,
+            title: z.string().min(1).max(2000).optional(),
+            notes: z.string().max(2000).optional(),
+          })
+          .strict(),
+      )
+      .max(50)
+      .optional(),
+    moduleIntents: z
+      .array(
+        z
+          .object({
+            moduleKey: z.enum(CANONICAL_WEBSITE_PLAN_MODULE_KEYS),
+            intent: z.enum(WEBSITE_PLAN_MODULE_INTENTS),
+          })
+          .strict(),
+      )
+      .max(50)
+      .optional(),
+    customRequirements: z.array(z.string().min(1).max(2000)).max(50).optional(),
+    notes: z.string().max(2000).optional(),
+  })
+  .strict();
+
+export type WebsitePlanRevision = z.infer<typeof websitePlanRevisionSchema>;
+
+export const reviseWebsitePlanRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  expectedPlanVersion: z.number().int().positive(),
+  revision: websitePlanRevisionSchema,
+});
+
+export type ReviseWebsitePlanRequest = z.infer<
+  typeof reviseWebsitePlanRequestSchema
+>;
+
+export const reviseWebsitePlanSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  plan: websitePlanProjectionSchema,
+  requiredAction: z.literal("CUSTOMER"),
+});
+
+export type ReviseWebsitePlanSuccess = z.infer<
+  typeof reviseWebsitePlanSuccessSchema
+>;
+
+export const confirmWebsitePlanRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  expectedPlanVersion: z.number().int().positive(),
+});
+
+export type ConfirmWebsitePlanRequest = z.infer<
+  typeof confirmWebsitePlanRequestSchema
+>;
+
+export const confirmWebsitePlanSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  plan: websitePlanProjectionSchema,
+  requiredAction: z.enum(WEBSITE_PLAN_CONFIRM_REQUIRED_ACTIONS),
+});
+
+export type ConfirmWebsitePlanSuccess = z.infer<
+  typeof confirmWebsitePlanSuccessSchema
+>;
