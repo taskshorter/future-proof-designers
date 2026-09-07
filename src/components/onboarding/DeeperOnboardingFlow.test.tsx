@@ -798,7 +798,10 @@ describe("DeeperOnboardingFlow", () => {
     await waitFor(() => {
       expect(screen.getByText(/Onboarding answers saved/i)).toBeInTheDocument();
     });
-    expect(screen.queryByText(/Website Plan|Quote|payment|B3/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Review Website Plan" }),
+    ).toHaveAttribute("href", `/portal/projects/${projectId}/plan`);
+    expect(screen.queryByText(/Quote|payment|checkout/i)).not.toBeInTheDocument();
   });
 
   it("keeps COMPLETE status when editing a completed section", async () => {

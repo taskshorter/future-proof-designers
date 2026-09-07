@@ -157,6 +157,20 @@ describe("Factory gateway client", () => {
               operationalHealth: "UNKNOWN",
               createdAt: "2026-04-01T00:00:00.000Z",
             },
+            {
+              projectId: "00000000-0000-4000-8000-000000000014",
+              projectName: "Confirmed Site",
+              customerId: "00000000-0000-4000-8000-000000000010",
+              customerName: "Bakery",
+              businessId: "00000000-0000-4000-8000-000000000011",
+              websiteId: "00000000-0000-4000-8000-000000000015",
+              lifecycleState: "PLANNING",
+              requiredAction: "SYSTEM",
+              commercialState: "NOT_REQUIRED",
+              provisioningState: "NOT_REQUIRED",
+              operationalHealth: "UNKNOWN",
+              createdAt: "2026-04-02T00:00:00.000Z",
+            },
           ],
         }),
         { status: 200 },
@@ -169,24 +183,30 @@ describe("Factory gateway client", () => {
       getGatewayBaseUrl: () => "http://127.0.0.1:3001",
     });
     expect(list.ok).toBe(true);
+    if (list.ok) {
+      expect(list.data.map((p) => p.lifecycleState)).toEqual([
+        "ONBOARDING",
+        "PLANNING",
+      ]);
+    }
 
     const detailFetch = mockFetch(
       new Response(
         JSON.stringify({
           ok: true,
           project: {
-            projectId: "00000000-0000-4000-8000-000000000013",
-            projectName: "Bakery Site",
+            projectId: "00000000-0000-4000-8000-000000000014",
+            projectName: "Confirmed Site",
             customerId: "00000000-0000-4000-8000-000000000010",
             customerName: "Bakery",
             businessId: "00000000-0000-4000-8000-000000000011",
-            websiteId: "00000000-0000-4000-8000-000000000012",
-            lifecycleState: "ONBOARDING",
-            requiredAction: "CUSTOMER",
+            websiteId: "00000000-0000-4000-8000-000000000015",
+            lifecycleState: "PLANNING",
+            requiredAction: "SYSTEM",
             commercialState: "NOT_REQUIRED",
             provisioningState: "NOT_REQUIRED",
             operationalHealth: "UNKNOWN",
-            createdAt: "2026-04-01T00:00:00.000Z",
+            createdAt: "2026-04-02T00:00:00.000Z",
           },
           intake: null,
         }),
@@ -194,7 +214,7 @@ describe("Factory gateway client", () => {
       ),
     );
 
-    const detail = await getProjectResumeDetail("00000000-0000-4000-8000-000000000013", {
+    const detail = await getProjectResumeDetail("00000000-0000-4000-8000-000000000014", {
       fetchImpl: detailFetch,
       getAccessToken: async () => "token",
       getGatewayBaseUrl: () => "http://127.0.0.1:3001",
@@ -202,6 +222,7 @@ describe("Factory gateway client", () => {
 
     expect(detail.ok).toBe(true);
     if (detail.ok) {
+      expect(detail.data.project.lifecycleState).toBe("PLANNING");
       expect(detail.data.intake).toBeNull();
     }
   });
@@ -1384,5 +1405,172 @@ describe("Project asset gateway", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.category).toBe("auth_required");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+const websitePlanFixture = {
+  projectId: "00000000-0000-4000-8000-000000000013",
+  planId: "00000000-0000-4000-8000-000000000020",
+  planVersion: 1,
+  planVersionId: "00000000-0000-4000-8000-000000000021",
+  headerVersion: 1,
+  confirmed: false,
+  businessUnderstanding: "Bakery",
+  websiteGoals: ["Leads"],
+  packageCategory: "ESSENTIAL",
+  packageRationale: "ESSENTIAL:default_marketing_envelope",
+  pages: [{ key: "home", title: "Home", origin: "FP_RECOMMENDED" }],
+  requiredFunctionality: [],
+  modules: [],
+  customRequirements: [],
+  designDirection: "Warm",
+  availableContentNotes: "",
+  missingContentNotes: "",
+  assetReferences: [],
+  customerFacingAssumptions: [],
+  customerSafeAttention: [],
+  assemblyStatus: "READY",
+  classificationAttention: [],
+};
+
+describe("B3-P1 website plan gateway methods", () => {
+  const projectId = "00000000-0000-4000-8000-000000000013";
+  const depsBase = {
+    getAccessToken: async () => "access-token",
+    getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+  };
+
+  it("GETs website plan with bearer and no-store", async () => {
+    const { getWebsitePlan } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(JSON.stringify({ ok: true, plan: null }), { status: 200 }),
+    );
+    const result = await getWebsitePlan(projectId, { ...depsBase, fetchImpl });
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "http://127.0.0.1:3001/api/v1/projects/00000000-0000-4000-8000-000000000013/website-plan",
+    );
+    expect(init.method).toBe("GET");
+    expect(init.cache).toBe("no-store");
+    expect(init.headers).toMatchObject({
+      Authorization: "Bearer access-token",
+    });
+  });
+
+  it("POSTs assemble with exact body", async () => {
+    const { assembleWebsitePlan } = await import("./gateway");
+    const fetchImpl = mockFetch(
+      new Response(
+        JSON.stringify({ ok: true, replayed: false, plan: websitePlanFixture }),
+        { status: 200 },
+      ),
+    );
+    const result = await assembleWebsitePlan(
+      projectId,
+      {
+        operationId: "00000000-0000-4000-8000-000000000050",
+        correlationId: "00000000-0000-4000-8000-000000000051",
+      },
+      { ...depsBase, fetchImpl },
+    );
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/website-plan/assemble");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      operationId: "00000000-0000-4000-8000-000000000050",
+      correlationId: "00000000-0000-4000-8000-000000000051",
+    });
+  });
+
+  it("POSTs revise and confirm with exact paths", async () => {
+    const { reviseWebsitePlan, confirmWebsitePlan } = await import("./gateway");
+    const reviseFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          plan: { ...websitePlanFixture, planVersion: 2 },
+          requiredAction: "CUSTOMER",
+        }),
+        { status: 200 },
+      ),
+    );
+    await reviseWebsitePlan(
+      projectId,
+      {
+        operationId: "00000000-0000-4000-8000-000000000052",
+        correlationId: "00000000-0000-4000-8000-000000000053",
+        expectedPlanVersion: 1,
+        revision: { addPages: [{ title: "About" }] },
+      },
+      { ...depsBase, fetchImpl: reviseFetch },
+    );
+    expect((reviseFetch.mock.calls[0] as [string])[0]).toContain(
+      "/website-plan/revisions",
+    );
+
+    const confirmFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          plan: { ...websitePlanFixture, confirmed: true },
+          requiredAction: "SYSTEM",
+        }),
+        { status: 200 },
+      ),
+    );
+    await confirmWebsitePlan(
+      projectId,
+      websitePlanFixture.planVersionId,
+      {
+        operationId: "00000000-0000-4000-8000-000000000054",
+        correlationId: "00000000-0000-4000-8000-000000000055",
+        expectedPlanVersion: 1,
+      },
+      { ...depsBase, fetchImpl: confirmFetch },
+    );
+    expect((confirmFetch.mock.calls[0] as [string])[0]).toContain(
+      `/website-plan/${websitePlanFixture.planVersionId}/confirm`,
+    );
+  });
+
+  it("maps website-plan HTTP errors safely", async () => {
+    const { getWebsitePlan, assembleWebsitePlan } = await import("./gateway");
+    const cases = [
+      [400, "invalid_input"],
+      [401, "session_expired"],
+      [403, "permission_denied"],
+      [404, "not_found"],
+      [409, "stale_or_conflicting"],
+      [503, "temporary_failure"],
+    ] as const;
+    for (const [status, category] of cases) {
+      const fetchImpl = mockFetch(new Response("{}", { status }));
+      const result = await getWebsitePlan(projectId, {
+        ...depsBase,
+        fetchImpl,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.category).toBe(category);
+    }
+
+    const malformed = mockFetch(
+      new Response(JSON.stringify({ ok: true, plan: { bad: true } }), {
+        status: 200,
+      }),
+    );
+    const bad = await assembleWebsitePlan(
+      projectId,
+      {
+        operationId: "00000000-0000-4000-8000-000000000056",
+        correlationId: "00000000-0000-4000-8000-000000000057",
+      },
+      { ...depsBase, fetchImpl: malformed },
+    );
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.category).toBe("internal_error");
   });
 });

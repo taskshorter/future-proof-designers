@@ -79,6 +79,12 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
         >
           Continue onboarding
         </Link>
+        <Link
+          className="button-link"
+          href={`/portal/projects/${encodeURIComponent(projectId)}/plan`}
+        >
+          Website Plan
+        </Link>
         <Link href="/portal">Back to projects</Link>
       </div>
     </div>
