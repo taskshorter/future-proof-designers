@@ -157,6 +157,20 @@ describe("Factory gateway client", () => {
               operationalHealth: "UNKNOWN",
               createdAt: "2026-04-01T00:00:00.000Z",
             },
+            {
+              projectId: "00000000-0000-4000-8000-000000000014",
+              projectName: "Confirmed Site",
+              customerId: "00000000-0000-4000-8000-000000000010",
+              customerName: "Bakery",
+              businessId: "00000000-0000-4000-8000-000000000011",
+              websiteId: "00000000-0000-4000-8000-000000000015",
+              lifecycleState: "PLANNING",
+              requiredAction: "SYSTEM",
+              commercialState: "NOT_REQUIRED",
+              provisioningState: "NOT_REQUIRED",
+              operationalHealth: "UNKNOWN",
+              createdAt: "2026-04-02T00:00:00.000Z",
+            },
           ],
         }),
         { status: 200 },
@@ -169,24 +183,30 @@ describe("Factory gateway client", () => {
       getGatewayBaseUrl: () => "http://127.0.0.1:3001",
     });
     expect(list.ok).toBe(true);
+    if (list.ok) {
+      expect(list.data.map((p) => p.lifecycleState)).toEqual([
+        "ONBOARDING",
+        "PLANNING",
+      ]);
+    }
 
     const detailFetch = mockFetch(
       new Response(
         JSON.stringify({
           ok: true,
           project: {
-            projectId: "00000000-0000-4000-8000-000000000013",
-            projectName: "Bakery Site",
+            projectId: "00000000-0000-4000-8000-000000000014",
+            projectName: "Confirmed Site",
             customerId: "00000000-0000-4000-8000-000000000010",
             customerName: "Bakery",
             businessId: "00000000-0000-4000-8000-000000000011",
-            websiteId: "00000000-0000-4000-8000-000000000012",
-            lifecycleState: "ONBOARDING",
-            requiredAction: "CUSTOMER",
+            websiteId: "00000000-0000-4000-8000-000000000015",
+            lifecycleState: "PLANNING",
+            requiredAction: "SYSTEM",
             commercialState: "NOT_REQUIRED",
             provisioningState: "NOT_REQUIRED",
             operationalHealth: "UNKNOWN",
-            createdAt: "2026-04-01T00:00:00.000Z",
+            createdAt: "2026-04-02T00:00:00.000Z",
           },
           intake: null,
         }),
@@ -194,7 +214,7 @@ describe("Factory gateway client", () => {
       ),
     );
 
-    const detail = await getProjectResumeDetail("00000000-0000-4000-8000-000000000013", {
+    const detail = await getProjectResumeDetail("00000000-0000-4000-8000-000000000014", {
       fetchImpl: detailFetch,
       getAccessToken: async () => "token",
       getGatewayBaseUrl: () => "http://127.0.0.1:3001",
@@ -202,6 +222,7 @@ describe("Factory gateway client", () => {
 
     expect(detail.ok).toBe(true);
     if (detail.ok) {
+      expect(detail.data.project.lifecycleState).toBe("PLANNING");
       expect(detail.data.intake).toBeNull();
     }
   });

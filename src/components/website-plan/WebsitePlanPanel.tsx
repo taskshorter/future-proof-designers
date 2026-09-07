@@ -15,12 +15,15 @@ import {
 } from "@/lib/website-plan/actions";
 import {
   assemblyStatusLabel,
-  attentionMessage,
+  customerAttentionMessages,
   moduleInclusionLabel,
   moduleKeyLabel,
   packageCategoryLabel,
+  packageRationaleMessage,
   pageOriginLabel,
+  requiredFunctionalityLabels,
 } from "@/lib/website-plan/labels";
+import { fingerprintWebsitePlanRevision } from "@/lib/website-plan/revision-fingerprint";
 
 type WebsitePlanPanelProps = {
   projectId: string;
@@ -47,6 +50,7 @@ export function WebsitePlanPanel({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<StatusTone>("muted");
   const [editing, setEditing] = useState(false);
+  const [conflictLocked, setConflictLocked] = useState(false);
   const [addTitle, setAddTitle] = useState("");
   const [addNotes, setAddNotes] = useState("");
   const [customDraft, setCustomDraft] = useState("");
@@ -55,6 +59,10 @@ export function WebsitePlanPanel({
   );
   const [editTitle, setEditTitle] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [pendingCustomIndex, setPendingCustomIndex] = useState<number | null>(
+    null,
+  );
+  const [customEditDraft, setCustomEditDraft] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const assembleIntentRef = useRef<{
@@ -71,8 +79,11 @@ export function WebsitePlanPanel({
     operationId: string;
     correlationId: string;
     expectedPlanVersion: number;
+    revisionFingerprint: string;
     revision: WebsitePlanRevision;
   } | null>(null);
+
+  const mutationsLocked = conflictLocked || isPending;
 
   const setFeedback = useCallback((message: string, tone: StatusTone) => {
     setStatusMessage(message);
@@ -92,6 +103,10 @@ export function WebsitePlanPanel({
       }
       setPlan(result.plan);
       setEditing(false);
+      setConflictLocked(false);
+      setPendingEditPageKey(null);
+      setPendingCustomIndex(null);
+      setCustomEditDraft("");
       setFeedback("Loaded the latest Website Plan.", "success");
       assembleIntentRef.current = null;
       confirmIntentRef.current = null;
@@ -135,32 +150,44 @@ export function WebsitePlanPanel({
 
   const submitRevision = useCallback(
     (revision: WebsitePlanRevision, successMessage: string) => {
-      if (!plan) return;
+      if (!plan || conflictLocked) return;
+
+      const fingerprint = fingerprintWebsitePlanRevision(revision);
+      const existing = revisionIntentRef.current;
       if (
-        !revisionIntentRef.current ||
-        revisionIntentRef.current.expectedPlanVersion !== plan.planVersion
+        !existing ||
+        existing.expectedPlanVersion !== plan.planVersion ||
+        existing.revisionFingerprint !== fingerprint
       ) {
         revisionIntentRef.current = {
           operationId: newId(),
           correlationId: newId(),
           expectedPlanVersion: plan.planVersion,
+          revisionFingerprint: fingerprint,
           revision,
         };
       } else {
         revisionIntentRef.current = {
-          ...revisionIntentRef.current,
+          ...existing,
           revision,
         };
       }
+
       const intent = revisionIntentRef.current;
       startTransition(async () => {
-        const result = await reviseWebsitePlanAction(projectId, intent);
+        const result = await reviseWebsitePlanAction(projectId, {
+          operationId: intent.operationId,
+          correlationId: intent.correlationId,
+          expectedPlanVersion: intent.expectedPlanVersion,
+          revision: intent.revision,
+        });
         if (!result.ok) {
           if (result.signInPath) {
             window.location.assign(result.signInPath);
             return;
           }
           if (result.category === "stale_or_conflicting") {
+            setConflictLocked(true);
             setFeedback(
               "This Website Plan was updated elsewhere. Reload the latest Plan before continuing.",
               "conflict",
@@ -183,15 +210,19 @@ export function WebsitePlanPanel({
         setPendingEditPageKey(null);
         setEditTitle("");
         setEditNotes("");
+        setPendingCustomIndex(null);
+        setCustomEditDraft("");
         setEditing(true);
         setFeedback(successMessage, "success");
       });
     },
-    [plan, projectId, setFeedback],
+    [conflictLocked, plan, projectId, setFeedback],
   );
 
   const handleConfirm = useCallback(() => {
-    if (!plan || isPlanIncomplete(plan) || plan.confirmed) return;
+    if (!plan || isPlanIncomplete(plan) || plan.confirmed || conflictLocked) {
+      return;
+    }
     if (
       !confirmIntentRef.current ||
       confirmIntentRef.current.planVersionId !== plan.planVersionId ||
@@ -213,6 +244,7 @@ export function WebsitePlanPanel({
           return;
         }
         if (result.category === "stale_or_conflicting") {
+          setConflictLocked(true);
           setFeedback(
             "This Website Plan was updated elsewhere. Reload the latest Plan before confirming.",
             "conflict",
@@ -243,7 +275,7 @@ export function WebsitePlanPanel({
         );
       }
     });
-  }, [plan, projectId, setFeedback]);
+  }, [conflictLocked, plan, projectId, setFeedback]);
 
   if (!plan) {
     return (
@@ -303,9 +335,16 @@ export function WebsitePlanPanel({
   }
 
   const incomplete = isPlanIncomplete(plan);
-  const showConfirm = !incomplete && !plan.confirmed && !editing;
+  const showConfirm = !incomplete && !plan.confirmed && !editing && !conflictLocked;
   const showConfirmedBanner = plan.confirmed && !editing;
   const booklocal = plan.modules.find((module) => module.moduleKey === "booklocal");
+  const attentionItems = customerAttentionMessages(
+    plan.customerSafeAttention,
+    plan.classificationAttention,
+  );
+  const functionalityLabels = requiredFunctionalityLabels(
+    plan.requiredFunctionality,
+  );
 
   return (
     <div className="page-stack">
@@ -332,7 +371,7 @@ export function WebsitePlanPanel({
           aria-live="polite"
         >
           {statusMessage}
-          {statusTone === "conflict" ? (
+          {statusTone === "conflict" || conflictLocked ? (
             <>
               {" "}
               <button
@@ -348,24 +387,58 @@ export function WebsitePlanPanel({
         </p>
       ) : null}
 
+      {conflictLocked && statusTone !== "conflict" ? (
+        <section className="panel">
+          <h2>Reload required</h2>
+          <p>
+            This Website Plan was updated elsewhere. Reload the latest Plan
+            before making more changes.
+          </p>
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={handleReload}
+          >
+            Reload latest Plan
+          </button>
+        </section>
+      ) : null}
+
       {incomplete ? (
         <section className="panel">
           <h2>This Plan is not ready to confirm</h2>
           <p>
-            Add the missing project details, then prepare or refresh the Website
-            Plan. Factory remains the authority for package classification.
+            You updated your onboarding information. Refresh this Website Plan
+            to use the latest saved project details.
           </p>
-          <ul>
-            {plan.customerSafeAttention.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-            {plan.classificationAttention.map((flag) => (
-              <li key={flag}>{attentionMessage(flag)}</li>
-            ))}
-          </ul>
+          {attentionItems.length > 0 ? (
+            <ul>
+              {attentionItems.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
           <div className="button-row">
+            <button
+              type="button"
+              disabled={mutationsLocked}
+              aria-busy={isPending}
+              onClick={() =>
+                submitRevision({}, "Website Plan refreshed with latest details.")
+              }
+            >
+              {isPending ? "Refreshing…" : "Refresh Website Plan"}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={mutationsLocked}
+              onClick={() => setEditing(true)}
+            >
+              Edit Website Plan
+            </button>
             <Link
-              className="button-link"
+              className="button-link secondary"
               href={`/portal/projects/${encodeURIComponent(projectId)}/onboarding`}
             >
               Continue onboarding
@@ -397,7 +470,7 @@ export function WebsitePlanPanel({
             <button
               type="button"
               className="secondary"
-              disabled={isPending}
+              disabled={mutationsLocked}
               onClick={() => {
                 setEditing(true);
                 setFeedback(
@@ -417,7 +490,9 @@ export function WebsitePlanPanel({
         <p>
           <strong>{packageCategoryLabel(plan.packageCategory)}</strong>
         </p>
-        <p>{plan.packageRationale}</p>
+        <p>
+          {packageRationaleMessage(plan.packageCategory, plan.packageRationale)}
+        </p>
         <p className="muted">{assemblyStatusLabel(plan.assemblyStatus)}</p>
       </section>
 
@@ -455,7 +530,7 @@ export function WebsitePlanPanel({
                     <button
                       type="button"
                       className="secondary"
-                      disabled={isPending}
+                      disabled={mutationsLocked}
                       onClick={() => {
                         setPendingEditPageKey(page.key);
                         setEditTitle(page.title);
@@ -469,7 +544,7 @@ export function WebsitePlanPanel({
                     <button
                       type="button"
                       className="secondary"
-                      disabled={isPending}
+                      disabled={mutationsLocked}
                       onClick={() =>
                         submitRevision(
                           { removeRecommendedPages: [{ pageKey: page.key }] },
@@ -484,7 +559,7 @@ export function WebsitePlanPanel({
                     <button
                       type="button"
                       className="secondary"
-                      disabled={isPending}
+                      disabled={mutationsLocked}
                       onClick={() =>
                         submitRevision(
                           { restoreRecommendedPages: [{ pageKey: page.key }] },
@@ -509,19 +584,19 @@ export function WebsitePlanPanel({
               id="edit-page-title"
               value={editTitle}
               onChange={(event) => setEditTitle(event.target.value)}
-              disabled={isPending}
+              disabled={mutationsLocked}
             />
             <label htmlFor="edit-page-notes">Notes</label>
             <textarea
               id="edit-page-notes"
               value={editNotes}
               onChange={(event) => setEditNotes(event.target.value)}
-              disabled={isPending}
+              disabled={mutationsLocked}
             />
             <div className="button-row">
               <button
                 type="button"
-                disabled={isPending || !editTitle.trim()}
+                disabled={mutationsLocked || !editTitle.trim()}
                 onClick={() =>
                   submitRevision(
                     {
@@ -542,7 +617,7 @@ export function WebsitePlanPanel({
               <button
                 type="button"
                 className="secondary"
-                disabled={isPending}
+                disabled={mutationsLocked}
                 onClick={() => {
                   setPendingEditPageKey(null);
                   setEditTitle("");
@@ -563,18 +638,18 @@ export function WebsitePlanPanel({
               id="add-page-title"
               value={addTitle}
               onChange={(event) => setAddTitle(event.target.value)}
-              disabled={isPending}
+              disabled={mutationsLocked}
             />
             <label htmlFor="add-page-notes">Notes</label>
             <textarea
               id="add-page-notes"
               value={addNotes}
               onChange={(event) => setAddNotes(event.target.value)}
-              disabled={isPending}
+              disabled={mutationsLocked}
             />
             <button
               type="button"
-              disabled={isPending || !addTitle.trim()}
+              disabled={mutationsLocked || !addTitle.trim()}
               onClick={() =>
                 submitRevision(
                   {
@@ -597,10 +672,10 @@ export function WebsitePlanPanel({
 
       <section className="panel">
         <h2>Required functionality</h2>
-        {plan.requiredFunctionality.length > 0 ? (
+        {functionalityLabels.length > 0 ? (
           <ul>
-            {plan.requiredFunctionality.map((item) => (
-              <li key={item}>{item}</li>
+            {functionalityLabels.map((label) => (
+              <li key={label}>{label}</li>
             ))}
           </ul>
         ) : (
@@ -631,7 +706,7 @@ export function WebsitePlanPanel({
             <button
               type="button"
               className="secondary"
-              disabled={isPending}
+              disabled={mutationsLocked}
               onClick={() =>
                 submitRevision(
                   {
@@ -650,7 +725,7 @@ export function WebsitePlanPanel({
             <button
               type="button"
               className="secondary"
-              disabled={isPending}
+              disabled={mutationsLocked}
               onClick={() =>
                 submitRevision(
                   {
@@ -671,14 +746,88 @@ export function WebsitePlanPanel({
       <section className="panel">
         <h2>Custom requirements</h2>
         {plan.customRequirements.length > 0 ? (
-          <ul>
-            {plan.customRequirements.map((item) => (
-              <li key={item}>{item}</li>
+          <ul className="website-plan-list">
+            {plan.customRequirements.map((item, index) => (
+              <li key={`${index}-${item}`} className="website-plan-item">
+                <div>
+                  <p>{item}</p>
+                </div>
+                {editing ? (
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={mutationsLocked}
+                      onClick={() => {
+                        setPendingCustomIndex(index);
+                        setCustomEditDraft(item);
+                      }}
+                    >
+                      Edit requirement
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={mutationsLocked}
+                      onClick={() => {
+                        const next = plan.customRequirements.filter(
+                          (_, i) => i !== index,
+                        );
+                        submitRevision(
+                          { customRequirements: next },
+                          "Custom requirement removed.",
+                        );
+                      }}
+                    >
+                      Remove requirement
+                    </button>
+                  </div>
+                ) : null}
+              </li>
             ))}
           </ul>
         ) : (
           <p className="muted">None listed.</p>
         )}
+        {editing && pendingCustomIndex !== null ? (
+          <div className="website-plan-editor">
+            <h3>Edit custom requirement</h3>
+            <label htmlFor="edit-custom-requirement">Requirement</label>
+            <textarea
+              id="edit-custom-requirement"
+              value={customEditDraft}
+              onChange={(event) => setCustomEditDraft(event.target.value)}
+              disabled={mutationsLocked}
+            />
+            <div className="button-row">
+              <button
+                type="button"
+                disabled={mutationsLocked || !customEditDraft.trim()}
+                onClick={() => {
+                  const next = [...plan.customRequirements];
+                  next[pendingCustomIndex] = customEditDraft.trim();
+                  submitRevision(
+                    { customRequirements: next },
+                    "Custom requirement updated.",
+                  );
+                }}
+              >
+                Save requirement
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={mutationsLocked}
+                onClick={() => {
+                  setPendingCustomIndex(null);
+                  setCustomEditDraft("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
         {editing ? (
           <div className="website-plan-editor">
             <label htmlFor="custom-requirement">Add custom requirement</label>
@@ -686,11 +835,11 @@ export function WebsitePlanPanel({
               id="custom-requirement"
               value={customDraft}
               onChange={(event) => setCustomDraft(event.target.value)}
-              disabled={isPending}
+              disabled={mutationsLocked}
             />
             <button
               type="button"
-              disabled={isPending || !customDraft.trim()}
+              disabled={mutationsLocked || !customDraft.trim()}
               onClick={() =>
                 submitRevision(
                   {
@@ -753,7 +902,7 @@ export function WebsitePlanPanel({
           <div className="button-row">
             <button
               type="button"
-              disabled={isPending || !showConfirm}
+              disabled={mutationsLocked || !showConfirm}
               aria-busy={isPending}
               onClick={handleConfirm}
             >
@@ -762,7 +911,7 @@ export function WebsitePlanPanel({
             <button
               type="button"
               className="secondary"
-              disabled={isPending}
+              disabled={mutationsLocked}
               onClick={() => setEditing(true)}
             >
               Edit Website Plan
@@ -782,7 +931,7 @@ export function WebsitePlanPanel({
             {!incomplete && !plan.confirmed ? (
               <button
                 type="button"
-                disabled={isPending}
+                disabled={mutationsLocked}
                 onClick={handleConfirm}
               >
                 Confirm Website Plan

@@ -92,6 +92,36 @@ describe("B3-P1 website plan actions", () => {
     }
   });
 
+  it("loads confirmed plan when resume lifecycle is PLANNING", async () => {
+    const planningResume = {
+      ...resume,
+      project: {
+        ...resume.project,
+        lifecycleState: "PLANNING" as const,
+        requiredAction: "SYSTEM",
+      },
+    };
+    const confirmedPlan = {
+      ...plan,
+      confirmed: true,
+      requiredAction: "SYSTEM" as const,
+    };
+    getProjectResumeDetail.mockResolvedValue({
+      ok: true,
+      data: planningResume,
+    });
+    getWebsitePlan.mockResolvedValue({
+      ok: true,
+      data: { ok: true, plan: confirmedPlan },
+    });
+    const result = await loadWebsitePlanPageData(projectId);
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.resume.project.lifecycleState).toBe("PLANNING");
+      expect(result.plan?.confirmed).toBe(true);
+    }
+  });
+
   it("maps session expiry to reauth", async () => {
     getProjectResumeDetail.mockResolvedValue({
       ok: false,

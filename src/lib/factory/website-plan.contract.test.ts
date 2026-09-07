@@ -79,15 +79,40 @@ describe("B3-P1 website plan contract schemas", () => {
     ).toBe("CUSTOMER");
 
     expect(
-      confirmWebsitePlanSuccessSchema.parse({
-        ok: true,
-        replayed: false,
-        plan: { ...planFixture, confirmed: true },
-        requiredAction: "SYSTEM",
-        quote: null,
-        offer: null,
+      reviseWebsitePlanRequestSchema.parse({
+        operationId: "00000000-0000-4000-8000-000000000046",
+        correlationId: "00000000-0000-4000-8000-000000000047",
+        expectedPlanVersion: 1,
+        revision: {},
+      }).revision,
+    ).toEqual({});
+
+    const confirm = confirmWebsitePlanSuccessSchema.parse({
+      ok: true,
+      replayed: false,
+      plan: { ...planFixture, confirmed: true },
+      requiredAction: "SYSTEM",
+      quote: null,
+      offer: null,
+    });
+    expect(confirm.requiredAction).toBe("SYSTEM");
+    expect(confirm.quote).toBeNull();
+    expect(confirm.offer).toBeNull();
+  });
+
+  it("bounds requiredAction and rejects malformed values", () => {
+    expect(
+      websitePlanProjectionSchema.parse({
+        ...planFixture,
+        requiredAction: "OWNER",
       }).requiredAction,
-    ).toBe("SYSTEM");
+    ).toBe("OWNER");
+    expect(() =>
+      websitePlanProjectionSchema.parse({
+        ...planFixture,
+        requiredAction: "BROWSER",
+      }),
+    ).toThrow();
   });
 
   it("rejects malformed upstream projection fields", () => {

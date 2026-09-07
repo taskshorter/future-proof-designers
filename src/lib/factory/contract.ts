@@ -63,6 +63,23 @@ export const projectStartSuccessSchema = z.object({
 
 export type ProjectStartSuccess = z.infer<typeof projectStartSuccessSchema>;
 
+/** Canonical Factory A3 project lifecycle states (compatibility only). */
+export const PROJECT_LIFECYCLE_STATES = [
+  "DRAFT",
+  "ONBOARDING",
+  "PLANNING",
+  "PRODUCTION",
+  "OWNER_REVIEW",
+  "CUSTOMER_REVIEW",
+  "LAUNCH_READY",
+  "LIVE",
+  "MAINTENANCE",
+  "PAUSED",
+  "CLOSED",
+] as const;
+
+export type ProjectLifecycleState = (typeof PROJECT_LIFECYCLE_STATES)[number];
+
 export const resumeProjectSummarySchema = z.object({
   projectId: z.string().uuid(),
   projectName: z.string(),
@@ -70,7 +87,7 @@ export const resumeProjectSummarySchema = z.object({
   customerName: z.string(),
   businessId: z.string().uuid(),
   websiteId: z.string().uuid(),
-  lifecycleState: z.literal("ONBOARDING"),
+  lifecycleState: z.enum(PROJECT_LIFECYCLE_STATES),
   requiredAction: z.string(),
   commercialState: z.string(),
   provisioningState: z.string(),
@@ -591,6 +608,16 @@ export const WEBSITE_PLAN_CONFIRM_REQUIRED_ACTIONS = ["SYSTEM", "OWNER"] as cons
 export type WebsitePlanConfirmRequiredAction =
   (typeof WEBSITE_PLAN_CONFIRM_REQUIRED_ACTIONS)[number];
 
+/** Customer Plan requiredAction values currently returned by Factory B3-F1. */
+export const WEBSITE_PLAN_REQUIRED_ACTIONS = [
+  "CUSTOMER",
+  "SYSTEM",
+  "OWNER",
+] as const;
+
+export type WebsitePlanRequiredAction =
+  (typeof WEBSITE_PLAN_REQUIRED_ACTIONS)[number];
+
 /** Initial canonical approved customer module ID from Factory B3-F1. */
 export const CANONICAL_WEBSITE_PLAN_MODULE_KEYS = ["booklocal"] as const;
 
@@ -626,7 +653,7 @@ export const websitePlanProjectionSchema = z.object({
   planVersionId: z.string().uuid(),
   headerVersion: z.number().int().nonnegative(),
   confirmed: z.boolean(),
-  requiredAction: z.string().optional(),
+  requiredAction: z.enum(WEBSITE_PLAN_REQUIRED_ACTIONS).optional(),
   businessUnderstanding: z.string(),
   websiteGoals: z.array(z.string()),
   packageCategory: z.enum(WEBSITE_PLAN_PACKAGE_CATEGORIES).nullable(),
@@ -762,6 +789,9 @@ export const confirmWebsitePlanSuccessSchema = z.object({
   replayed: z.boolean(),
   plan: websitePlanProjectionSchema,
   requiredAction: z.enum(WEBSITE_PLAN_CONFIRM_REQUIRED_ACTIONS),
+  // Factory B3-F1 currently returns these as null; accept and discard for B3-P1.
+  quote: z.null().optional(),
+  offer: z.null().optional(),
 });
 
 export type ConfirmWebsitePlanSuccess = z.infer<
