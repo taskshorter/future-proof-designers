@@ -33,5 +33,6 @@ export function quoteLineAmountSuffix(line: QuoteLine): string {
 export const DECLINE_NEUTRAL_MESSAGE =
   "This proposal is not moving forward at this time. If you have questions, contact Future Proof.";
 
+/** @deprecated Prefer DepositPaymentPanel — kept for label test compatibility. */
 export const DEPOSIT_READY_PAYMENT_NOTE =
-  "Your deposit amount is shown below. Payment will be handled in the next step once that capability is available.";
+  "Your deposit amount is shown with pricing. Payment is available in the production deposit section when Factory says you can pay.";

@@ -992,3 +992,86 @@ export const confirmWebsitePlanSuccessSchema = z.object({
 export type ConfirmWebsitePlanSuccess = z.infer<
   typeof confirmWebsitePlanSuccessSchema
 >;
+
+// ---------------------------------------------------------------------------
+// B4-P1 — Deposit payment (Factory gateway projection)
+// ---------------------------------------------------------------------------
+
+/** Includes forward-compatible PAID (emitted by B4-F2; not by B4-F1). */
+export const DEPOSIT_PAYMENT_STATES = [
+  "NOT_AVAILABLE",
+  "READY_TO_PAY",
+  "PAYMENT_IN_PROGRESS",
+  "CONFIRMING",
+  "PAID",
+  "ACTION_REQUIRED",
+  "FAILED_RETRYABLE",
+] as const;
+
+export type DepositPaymentState = (typeof DEPOSIT_PAYMENT_STATES)[number];
+
+export const depositPaymentStateSchema = z.enum(DEPOSIT_PAYMENT_STATES);
+
+export const depositPaymentStatusProjectionSchema = z
+  .object({
+    ok: z.literal(true),
+    paymentAvailable: z.boolean(),
+    paymentState: depositPaymentStateSchema,
+    amountDueMinor: z.number().int().nullable(),
+    currency: z.string().nullable(),
+    taxMinor: z.number().int().nullable(),
+    paymentAttemptId: z.string().uuid().nullable(),
+  })
+  .strict();
+
+export type DepositPaymentStatusProjection = z.infer<
+  typeof depositPaymentStatusProjectionSchema
+>;
+
+export const depositCheckoutRequestSchema = z
+  .object({
+    operationId: z.string().uuid(),
+    correlationId: z.string().uuid(),
+  })
+  .strict();
+
+export type DepositCheckoutRequest = z.infer<typeof depositCheckoutRequestSchema>;
+
+export const depositCheckoutSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    replayed: z.boolean(),
+    paymentAttemptId: z.string().uuid(),
+    checkoutUrl: z.string().min(1),
+    checkoutSessionId: z.string().min(1),
+    paymentState: z.literal("PAYMENT_IN_PROGRESS"),
+    amountDueMinor: z.number().int(),
+    currency: z.string().min(1),
+    taxMinor: z.number().int().nullable(),
+  })
+  .strict();
+
+export type DepositCheckoutSuccess = z.infer<typeof depositCheckoutSuccessSchema>;
+
+/**
+ * Fail-closed validation for Stripe-hosted Checkout redirect URLs.
+ * Hostname must be exactly checkout.stripe.com over HTTPS.
+ */
+export function validateStripeCheckoutUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("Invalid checkout URL");
+  }
+  if (url.protocol !== "https:") {
+    throw new Error("Invalid checkout URL");
+  }
+  if (url.username || url.password) {
+    throw new Error("Invalid checkout URL");
+  }
+  if (url.hostname !== "checkout.stripe.com") {
+    throw new Error("Invalid checkout URL");
+  }
+  return url.toString();
+}

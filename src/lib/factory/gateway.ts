@@ -13,6 +13,9 @@ import {
   createProjectAssetReadIntentSuccessSchema,
   createProjectAssetUploadIntentRequestSchema,
   createProjectAssetUploadIntentSuccessSchema,
+  depositCheckoutRequestSchema,
+  depositCheckoutSuccessSchema,
+  depositPaymentStatusProjectionSchema,
   editResearchCandidateRequestSchema,
   factoryErrorResponseSchema,
   getCommercialOfferSuccessSchema,
@@ -51,10 +54,14 @@ import {
   type CreateProjectAssetReadIntentSuccess,
   type CreateProjectAssetUploadIntentRequest,
   type CreateProjectAssetUploadIntentSuccess,
+  type DepositCheckoutRequest,
+  type DepositCheckoutSuccess,
+  type DepositPaymentStatusProjection,
   type EditResearchCandidateRequest,
   type FactoryErrorCategory,
   type FactoryGatewayResult,
   type GetCommercialOfferSuccess,
+  validateStripeCheckoutUrl,
   type GetProjectQuoteSuccess,
   type GetWebsitePlanSuccess,
   type ListProjectAssetsSuccess,
@@ -551,5 +558,38 @@ export async function respondCommercialNeedInfo(
     },
     deps,
     (payload) => respondCommercialNeedInfoSuccessSchema.parse(payload),
+  );
+}
+
+export async function getDepositPayment(
+  projectId: string,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<DepositPaymentStatusProjection>> {
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/deposit-payment`,
+    { method: "GET" },
+    deps,
+    (payload) => depositPaymentStatusProjectionSchema.parse(payload),
+  );
+}
+
+export async function initiateDepositCheckout(
+  projectId: string,
+  request: DepositCheckoutRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<DepositCheckoutSuccess>> {
+  const normalized = depositCheckoutRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/deposit-checkout`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => {
+      const parsed = depositCheckoutSuccessSchema.parse(payload);
+      validateStripeCheckoutUrl(parsed.checkoutUrl);
+      return parsed;
+    },
   );
 }

@@ -1,7 +1,7 @@
 export const DEFAULT_RETURN_PATH = "/portal";
 
 const ALLOWED_DESTINATION =
-  /^\/(?:portal(?:\/projects\/[^/]+(?:\/(?:onboarding|plan|commercial))?)?|start)(?:[?#][^/\\@]*)?$/;
+  /^\/(?:portal(?:\/projects\/[^/]+(?:\/(?:onboarding|plan|commercial))?)?|start|projects\/[^/]+\/deposit\/(?:return|cancel))(?:[?#][^/\\@]*)?$/;
 
 function rejectsRawInput(value: string): boolean {
   if (!value.startsWith("/") || value.startsWith("//")) {
