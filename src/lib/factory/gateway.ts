@@ -15,7 +15,9 @@ import {
   createProjectAssetUploadIntentSuccessSchema,
   editResearchCandidateRequestSchema,
   factoryErrorResponseSchema,
+  getCommercialOfferSuccessSchema,
   getProjectOnboardingSuccessSchema,
+  getProjectQuoteSuccessSchema,
   getProjectResearchSuccessSchema,
   getWebsitePlanSuccessSchema,
   listProjectAssetsSuccessSchema,
@@ -23,11 +25,15 @@ import {
   projectResumeListSuccessSchema,
   projectStartRequestSchema,
   projectStartSuccessSchema,
+  reapproveCommercialOfferRequestSchema,
+  reapproveCommercialOfferSuccessSchema,
   reconcileResearchCandidateSuccessSchema,
   rejectResearchCandidateRequestSchema,
   rejectResearchCandidateSuccessSchema,
   removeProjectAssetRequestSchema,
   removeProjectAssetSuccessSchema,
+  respondCommercialNeedInfoRequestSchema,
+  respondCommercialNeedInfoSuccessSchema,
   reviseWebsitePlanRequestSchema,
   reviseWebsitePlanSuccessSchema,
   saveProjectOnboardingSectionRequestSchema,
@@ -48,6 +54,8 @@ import {
   type EditResearchCandidateRequest,
   type FactoryErrorCategory,
   type FactoryGatewayResult,
+  type GetCommercialOfferSuccess,
+  type GetProjectQuoteSuccess,
   type GetWebsitePlanSuccess,
   type ListProjectAssetsSuccess,
   type OnboardingSectionKey,
@@ -57,11 +65,15 @@ import {
   type ProjectStartRequest,
   type ProjectStartSuccess,
   type ProjectResumeSummary,
+  type ReapproveCommercialOfferRequest,
+  type ReapproveCommercialOfferSuccess,
   type ReconcileResearchCandidateSuccess,
   type RejectResearchCandidateRequest,
   type RejectResearchCandidateSuccess,
   type RemoveProjectAssetRequest,
   type RemoveProjectAssetSuccess,
+  type RespondCommercialNeedInfoRequest,
+  type RespondCommercialNeedInfoSuccess,
   type ReviseWebsitePlanRequest,
   type ReviseWebsitePlanSuccess,
   type SaveProjectOnboardingSectionRequest,
@@ -479,5 +491,65 @@ export async function confirmWebsitePlan(
     },
     deps,
     (payload) => confirmWebsitePlanSuccessSchema.parse(payload),
+  );
+}
+
+export async function getProjectQuote(
+  projectId: string,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<GetProjectQuoteSuccess>> {
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/quote`,
+    { method: "GET" },
+    deps,
+    (payload) => getProjectQuoteSuccessSchema.parse(payload),
+  );
+}
+
+export async function getCommercialOffer(
+  projectId: string,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<GetCommercialOfferSuccess>> {
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/commercial-offer`,
+    { method: "GET" },
+    deps,
+    (payload) => getCommercialOfferSuccessSchema.parse(payload),
+  );
+}
+
+export async function reapproveCommercialOffer(
+  projectId: string,
+  offerVersionId: string,
+  request: ReapproveCommercialOfferRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<ReapproveCommercialOfferSuccess>> {
+  const normalized = reapproveCommercialOfferRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/commercial-offer/${encodeURIComponent(offerVersionId)}/reapprove`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => reapproveCommercialOfferSuccessSchema.parse(payload),
+  );
+}
+
+export async function respondCommercialNeedInfo(
+  projectId: string,
+  blockerId: string,
+  request: RespondCommercialNeedInfoRequest,
+  deps: FactoryGatewayDependencies,
+): Promise<FactoryGatewayResult<RespondCommercialNeedInfoSuccess>> {
+  const normalized = respondCommercialNeedInfoRequestSchema.parse(request);
+  return factoryFetch(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/commercial/need-info/${encodeURIComponent(blockerId)}/respond`,
+    {
+      method: "POST",
+      body: JSON.stringify(normalized),
+    },
+    deps,
+    (payload) => respondCommercialNeedInfoSuccessSchema.parse(payload),
   );
 }

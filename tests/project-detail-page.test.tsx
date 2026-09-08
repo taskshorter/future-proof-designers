@@ -80,6 +80,16 @@ describe("ProjectDetailPage customer copy", () => {
       "href",
       "/portal/projects/11111111-1111-4111-8111-111111111111/onboarding",
     );
+    expect(screen.getByRole("link", { name: "Website Plan" })).toHaveAttribute(
+      "href",
+      "/portal/projects/11111111-1111-4111-8111-111111111111/plan",
+    );
+    expect(
+      screen.getByRole("link", { name: "Proposal & Pricing" }),
+    ).toHaveAttribute(
+      "href",
+      "/portal/projects/11111111-1111-4111-8111-111111111111/commercial",
+    );
     expect(screen.queryByText(/B1|B2|tranche|contract/i)).not.toBeInTheDocument();
   });
 });

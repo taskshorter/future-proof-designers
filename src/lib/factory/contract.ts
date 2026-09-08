@@ -784,14 +784,209 @@ export type ConfirmWebsitePlanRequest = z.infer<
   typeof confirmWebsitePlanRequestSchema
 >;
 
+/* -------------------------------------------------------------------------- */
+/* B3-P2 Proposal & Pricing customer contract (mirrors Factory B3 commercial) */
+/* -------------------------------------------------------------------------- */
+
+export const QUOTE_LINE_KINDS = ["ONE_TIME", "RECURRING"] as const;
+export type QuoteLineKind = (typeof QUOTE_LINE_KINDS)[number];
+
+export const QUOTE_LINE_INTERVALS = ["MONTH"] as const;
+export type QuoteLineInterval = (typeof QUOTE_LINE_INTERVALS)[number];
+
+export const QUOTE_UNAVAILABLE_REASONS = [
+  "NOT_YET_AVAILABLE",
+  "CUSTOM_AWAITING_OWNER_TERMS",
+  "PLAN_RECONFIRM_REQUIRED",
+] as const;
+
+export type QuoteUnavailableReason =
+  (typeof QUOTE_UNAVAILABLE_REASONS)[number];
+
+export const quoteLineSchema = z.object({
+  kind: z.enum(QUOTE_LINE_KINDS),
+  label: z.string().min(1),
+  minorUnits: z.number().int(),
+  interval: z.enum(QUOTE_LINE_INTERVALS).nullable(),
+});
+
+export type QuoteLine = z.infer<typeof quoteLineSchema>;
+
+export const quoteProjectionSchema = z
+  .object({
+    projectId: z.string().uuid(),
+    quoteId: z.string().uuid(),
+    quoteVersion: z.number().int().positive(),
+    quoteVersionId: z.string().uuid(),
+    planVersionId: z.string().uuid(),
+    currency: z.string().min(1),
+    lines: z.array(quoteLineSchema),
+    oneTimeTotalMinor: z.number().int(),
+    recurringMonthlyMinor: z.number().int(),
+    depositMinor: z.number().int(),
+    remainingMinor: z.number().int(),
+    taxStatement: z.string(),
+    customerRationale: z.string(),
+  })
+  .strict();
+
+export type QuoteProjection = z.infer<typeof quoteProjectionSchema>;
+
+export const getProjectQuoteSuccessSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    quote: quoteProjectionSchema,
+  }),
+  z.object({
+    ok: z.literal(true),
+    quote: z.null(),
+    reason: z.enum(QUOTE_UNAVAILABLE_REASONS),
+  }),
+]);
+
+export type GetProjectQuoteSuccess = z.infer<typeof getProjectQuoteSuccessSchema>;
+
+export const COMMERCIAL_OFFER_STATUSES = [
+  "DECLINED",
+  "DEPOSIT_READY",
+  "NEED_MORE_INFORMATION",
+  "NEEDS_CONSULTATION",
+  "AWAITING_CUSTOMER_REAPPROVAL",
+  "OWNER_APPROVED",
+  "AWAITING_OWNER",
+] as const;
+
+export type CommercialOfferStatus =
+  (typeof COMMERCIAL_OFFER_STATUSES)[number];
+
+export const COMMERCIAL_OFFER_UNAVAILABLE_REASONS = [
+  "NOT_YET_AVAILABLE",
+  "CUSTOM_AWAITING_OWNER_TERMS",
+  "PLAN_RECONFIRM_REQUIRED",
+] as const;
+
+export type CommercialOfferUnavailableReason =
+  (typeof COMMERCIAL_OFFER_UNAVAILABLE_REASONS)[number];
+
+export const commercialOfferProjectionSchema = z
+  .object({
+    projectId: z.string().uuid(),
+    offerId: z.string().uuid(),
+    offerVersion: z.number().int().positive(),
+    offerVersionId: z.string().uuid(),
+    planVersionId: z.string().uuid(),
+    quoteVersionId: z.string().uuid(),
+    status: z.enum(COMMERCIAL_OFFER_STATUSES),
+    customerPlanConfirmed: z.boolean(),
+    customerOfferReapproved: z.boolean(),
+    ownerApproved: z.boolean(),
+    ownerRejected: z.boolean(),
+    depositReady: z.boolean(),
+    requiredAction: z.string().optional(),
+    lifecycleState: z.string().optional(),
+    commercialState: z.string().optional(),
+  })
+  .strict();
+
+export type CommercialOfferProjection = z.infer<
+  typeof commercialOfferProjectionSchema
+>;
+
+export const needInfoProjectionSchema = z
+  .object({
+    blockerId: z.string().uuid(),
+    version: z.number().int().positive(),
+    category: z.literal("commercial.need_more_information"),
+    customerVisibleQuestion: z.string().min(1),
+    state: z.string().min(1),
+  })
+  .strict();
+
+export type NeedInfoProjection = z.infer<typeof needInfoProjectionSchema>;
+
+export const declineProjectionSchema = z
+  .object({
+    decision: z.literal("DECLINED"),
+    customerSafeExplanation: z.string().nullable(),
+    decidedAt: z.string().min(1),
+  })
+  .strict();
+
+export type DeclineProjection = z.infer<typeof declineProjectionSchema>;
+
+export const getCommercialOfferSuccessSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    offer: commercialOfferProjectionSchema,
+    needInfo: needInfoProjectionSchema.nullable(),
+    consultationRequired: z.boolean(),
+    decline: declineProjectionSchema.nullable(),
+  }),
+  z.object({
+    ok: z.literal(true),
+    offer: z.null(),
+    reason: z.enum(COMMERCIAL_OFFER_UNAVAILABLE_REASONS),
+    needInfo: needInfoProjectionSchema.nullable(),
+    consultationRequired: z.boolean(),
+    decline: declineProjectionSchema.nullable(),
+  }),
+]);
+
+export type GetCommercialOfferSuccess = z.infer<
+  typeof getCommercialOfferSuccessSchema
+>;
+
+export const reapproveCommercialOfferRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  expectedOfferVersion: z.number().int().positive(),
+});
+
+export type ReapproveCommercialOfferRequest = z.infer<
+  typeof reapproveCommercialOfferRequestSchema
+>;
+
+export const reapproveCommercialOfferSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  offer: commercialOfferProjectionSchema,
+  requiredAction: z.literal("OWNER"),
+});
+
+export type ReapproveCommercialOfferSuccess = z.infer<
+  typeof reapproveCommercialOfferSuccessSchema
+>;
+
+export const respondCommercialNeedInfoRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  correlationId: z.string().uuid(),
+  expectedBlockerVersion: z.number().int().positive(),
+  responseText: z.string().trim().min(1).max(4000),
+});
+
+export type RespondCommercialNeedInfoRequest = z.infer<
+  typeof respondCommercialNeedInfoRequestSchema
+>;
+
+export const respondCommercialNeedInfoSuccessSchema = z.object({
+  ok: z.literal(true),
+  replayed: z.boolean(),
+  blocker: needInfoProjectionSchema,
+  requiredAction: z.literal("OWNER"),
+});
+
+export type RespondCommercialNeedInfoSuccess = z.infer<
+  typeof respondCommercialNeedInfoSuccessSchema
+>;
+
 export const confirmWebsitePlanSuccessSchema = z.object({
   ok: z.literal(true),
   replayed: z.boolean(),
   plan: websitePlanProjectionSchema,
   requiredAction: z.enum(WEBSITE_PLAN_CONFIRM_REQUIRED_ACTIONS),
-  // Factory B3-F1 currently returns these as null; accept and discard for B3-P1.
-  quote: z.null().optional(),
-  offer: z.null().optional(),
+  // Factory B3 may return real Quote/Offer projections (or null for Custom).
+  quote: quoteProjectionSchema.nullable(),
+  offer: commercialOfferProjectionSchema.nullable(),
 });
 
 export type ConfirmWebsitePlanSuccess = z.infer<

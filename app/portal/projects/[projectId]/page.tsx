@@ -85,6 +85,12 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
         >
           Website Plan
         </Link>
+        <Link
+          className="button-link"
+          href={`/portal/projects/${encodeURIComponent(projectId)}/commercial`}
+        >
+          Proposal &amp; Pricing
+        </Link>
         <Link href="/portal">Back to projects</Link>
       </div>
     </div>

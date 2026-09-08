@@ -262,8 +262,14 @@ export function WebsitePlanPanel({
       confirmIntentRef.current = null;
       setPlan(result.plan);
       setEditing(false);
-      const requiredAction = result.requiredAction ?? result.plan.requiredAction;
-      if (requiredAction === "OWNER" || result.plan.packageCategory === "CUSTOM") {
+      const hasCommercialProjections =
+        result.quote != null || result.offer != null;
+      if (hasCommercialProjections) {
+        setFeedback(
+          "Your Website Plan is confirmed. Your proposal and pricing are ready and are being reviewed by our team.",
+          "success",
+        );
+      } else if (result.plan.packageCategory === "CUSTOM") {
         setFeedback(
           "Your Website Plan is confirmed. This project needs custom commercial terms, so our team will review the scope before pricing is available.",
           "success",
@@ -450,8 +456,7 @@ export function WebsitePlanPanel({
       {showConfirmedBanner ? (
         <section className="panel">
           <h2>Website Plan confirmed</h2>
-          {plan.packageCategory === "CUSTOM" ||
-          plan.requiredAction === "OWNER" ? (
+          {plan.packageCategory === "CUSTOM" ? (
             <p>
               Your Website Plan is confirmed. This project needs custom
               commercial terms, so our team will review the scope before pricing
@@ -459,14 +464,17 @@ export function WebsitePlanPanel({
             </p>
           ) : (
             <p>
-              Your Website Plan is confirmed. We’re preparing the next pricing
-              and review step.
+              Your Website Plan is confirmed. Your proposal and pricing may be
+              ready for review on the Proposal &amp; Pricing page.
             </p>
           )}
-          <p className="muted">
-            Pricing will be available after the next review step.
-          </p>
           <div className="button-row">
+            <Link
+              className="button-link"
+              href={`/portal/projects/${encodeURIComponent(projectId)}/commercial`}
+            >
+              View proposal &amp; pricing
+            </Link>
             <button
               type="button"
               className="secondary"

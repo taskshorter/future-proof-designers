@@ -688,6 +688,8 @@ describe("WebsitePlanPanel", () => {
       plan: basePlan({ confirmed: true, requiredAction: "SYSTEM" }),
       replayed: false,
       requiredAction: "SYSTEM",
+      quote: null,
+      offer: null,
     });
     render(
       <WebsitePlanPanel
@@ -712,6 +714,62 @@ describe("WebsitePlanPanel", () => {
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
+  it("shows proposal-ready copy when confirm returns Quote and Offer", async () => {
+    confirmWebsitePlanAction.mockResolvedValue({
+      ok: true,
+      plan: basePlan({ confirmed: true, requiredAction: "SYSTEM" }),
+      replayed: false,
+      requiredAction: "SYSTEM",
+      quote: {
+        projectId,
+        quoteId: "00000000-0000-4000-8000-000000000080",
+        quoteVersion: 1,
+        quoteVersionId: "00000000-0000-4000-8000-000000000081",
+        planVersionId: "00000000-0000-4000-8000-000000000021",
+        currency: "USD",
+        lines: [],
+        oneTimeTotalMinor: 100,
+        recurringMonthlyMinor: 0,
+        depositMinor: 50,
+        remainingMinor: 50,
+        taxStatement: "",
+        customerRationale: "",
+      },
+      offer: {
+        projectId,
+        offerId: "00000000-0000-4000-8000-000000000082",
+        offerVersion: 1,
+        offerVersionId: "00000000-0000-4000-8000-000000000083",
+        planVersionId: "00000000-0000-4000-8000-000000000021",
+        quoteVersionId: "00000000-0000-4000-8000-000000000081",
+        status: "AWAITING_OWNER",
+        customerPlanConfirmed: true,
+        customerOfferReapproved: false,
+        ownerApproved: false,
+        ownerRejected: false,
+        depositReady: false,
+      },
+    });
+    render(
+      <WebsitePlanPanel
+        projectId={projectId}
+        projectName="Bakery"
+        initialPlan={basePlan()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm Website Plan" }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/proposal and pricing are ready/i).length,
+      ).toBeGreaterThan(0);
+    });
+    expect(
+      screen.getByRole("link", { name: /View proposal & pricing/i }),
+    ).toBeInTheDocument();
+  });
+
   it("shows owner pending copy for Custom confirm", async () => {
     confirmWebsitePlanAction.mockResolvedValue({
       ok: true,
@@ -722,6 +780,8 @@ describe("WebsitePlanPanel", () => {
       }),
       replayed: false,
       requiredAction: "OWNER",
+      quote: null,
+      offer: null,
     });
     render(
       <WebsitePlanPanel
