@@ -456,18 +456,10 @@ export function WebsitePlanPanel({
       {showConfirmedBanner ? (
         <section className="panel">
           <h2>Website Plan confirmed</h2>
-          {plan.packageCategory === "CUSTOM" ? (
-            <p>
-              Your Website Plan is confirmed. This project needs custom
-              commercial terms, so our team will review the scope before pricing
-              is available.
-            </p>
-          ) : (
-            <p>
-              Your Website Plan is confirmed. Your proposal and pricing may be
-              ready for review on the Proposal &amp; Pricing page.
-            </p>
-          )}
+          <p>
+            Your Website Plan is confirmed. View Proposal &amp; Pricing for the
+            latest pricing and review status.
+          </p>
           <div className="button-row">
             <Link
               className="button-link"

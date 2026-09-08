@@ -47,8 +47,9 @@ type NeedInfoIntent = {
   correlationId: string;
 };
 
-function fingerprintResponse(text: string): string {
-  return text.trim().replace(/\s+/g, " ");
+function canonicalizeNeedInfoResponse(text: string): string {
+  // Match Factory: trim only. Do not collapse internal whitespace.
+  return text.trim();
 }
 
 function ScopeSummary({
@@ -263,6 +264,7 @@ export function CommercialProposalPanel({
 
   const handleReload = () => {
     startTransition(async () => {
+      const previousNeedInfo = snapshot.needInfo;
       const result = await reloadCommercialSnapshotAction(projectId);
       if (!result.ok) {
         if (result.signInPath) {
@@ -275,6 +277,17 @@ export function CommercialProposalPanel({
       reapproveIntentRef.current = null;
       needInfoIntentRef.current = null;
       setConflictLocked(false);
+
+      const nextNeedInfo = result.snapshot.needInfo;
+      const blockerChanged =
+        !previousNeedInfo ||
+        !nextNeedInfo ||
+        previousNeedInfo.blockerId !== nextNeedInfo.blockerId ||
+        previousNeedInfo.version !== nextNeedInfo.version;
+      if (blockerChanged) {
+        setNeedInfoText("");
+      }
+
       setSnapshot(result.snapshot);
       setFeedback("Loaded the latest proposal.", "success");
     });
@@ -332,24 +345,23 @@ export function CommercialProposalPanel({
   const handleNeedInfoSubmit = () => {
     const needInfo = snapshot.needInfo;
     if (!needInfo || mutationsLocked) return;
-    const trimmed = needInfoText.trim();
-    if (trimmed.length < 1 || trimmed.length > 4000) {
+    const normalizedResponse = canonicalizeNeedInfoResponse(needInfoText);
+    if (normalizedResponse.length < 1 || normalizedResponse.length > 4000) {
       setFeedback("Enter a response between 1 and 4000 characters.", "error");
       return;
     }
 
-    const fingerprint = fingerprintResponse(trimmed);
     let intent = needInfoIntentRef.current;
     if (
       !intent ||
       intent.blockerId !== needInfo.blockerId ||
       intent.expectedBlockerVersion !== needInfo.version ||
-      intent.responseFingerprint !== fingerprint
+      intent.responseFingerprint !== normalizedResponse
     ) {
       intent = {
         blockerId: needInfo.blockerId,
         expectedBlockerVersion: needInfo.version,
-        responseFingerprint: fingerprint,
+        responseFingerprint: normalizedResponse,
         operationId: crypto.randomUUID(),
         correlationId: crypto.randomUUID(),
       };
@@ -362,7 +374,7 @@ export function CommercialProposalPanel({
         operationId: intent!.operationId,
         correlationId: intent!.correlationId,
         expectedBlockerVersion: intent!.expectedBlockerVersion,
-        responseText: trimmed,
+        responseText: normalizedResponse,
       });
       if (!result.ok) {
         if (result.signInPath) {

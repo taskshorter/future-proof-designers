@@ -1106,4 +1106,33 @@ describe("WebsitePlanPanel", () => {
     expect(screen.getByText("Website module")).toBeInTheDocument();
     expect(screen.queryByText("future_internal_module")).not.toBeInTheDocument();
   });
+
+  it.each(["ESSENTIAL", "BUSINESS", "CUSTOM"] as const)(
+    "shows neutral durable confirmed banner with proposal link for already-confirmed %s",
+    (packageCategory) => {
+      render(
+        <WebsitePlanPanel
+          projectId={projectId}
+          projectName="Bakery"
+          initialPlan={basePlan({
+            packageCategory,
+            confirmed: true,
+            requiredAction: "SYSTEM",
+          })}
+        />,
+      );
+      expect(
+        screen.getByText(
+          /Your Website Plan is confirmed\. View Proposal & Pricing for the latest pricing and review status\./,
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: /View proposal & pricing/i }),
+      ).toHaveAttribute(
+        "href",
+        `/portal/projects/${projectId}/commercial`,
+      );
+      expect(screen.queryByText(/before pricing is available/i)).not.toBeInTheDocument();
+    },
+  );
 });

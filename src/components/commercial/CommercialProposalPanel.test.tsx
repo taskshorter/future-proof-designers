@@ -436,4 +436,194 @@ describe("CommercialProposalPanel", () => {
     expect(screen.getByText(/has been approved/i)).toBeInTheDocument();
     expect(screen.queryByText(/pay now|checkout/i)).not.toBeInTheDocument();
   });
+
+  it("shows neutral decline copy when customerSafeExplanation is null", () => {
+    render(
+      <CommercialProposalPanel
+        projectId={projectId}
+        initialSnapshot={makeSnapshot({
+          offer: { ...makeSnapshot().offer!, status: "DECLINED" },
+          decline: {
+            decision: "DECLINED",
+            customerSafeExplanation: null,
+            decidedAt: "2026-09-07T00:00:00.000Z",
+          },
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: /Proposal not moving forward/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /This proposal is not moving forward at this time\. If you have questions, contact Future Proof\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/DECLINE_/)).not.toBeInTheDocument();
+  });
+
+  it("hides reapproval when versionMismatch is true", () => {
+    render(
+      <CommercialProposalPanel
+        projectId={projectId}
+        initialSnapshot={makeSnapshot({
+          offer: {
+            ...makeSnapshot().offer!,
+            status: "AWAITING_CUSTOMER_REAPPROVAL",
+          },
+          versionMismatch: true,
+        })}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /Approve revised proposal/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Reload latest proposal/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("reuses need-info operation identity only for the exact trimmed response payload", async () => {
+    respondCommercialNeedInfoAction
+      .mockResolvedValueOnce({
+        ok: false,
+        category: "temporary_failure",
+        message: "Temporary failure",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        category: "temporary_failure",
+        message: "Temporary failure",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        category: "temporary_failure",
+        message: "Temporary failure",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        category: "temporary_failure",
+        message: "Temporary failure",
+      });
+
+    const needInfoSnapshot = makeSnapshot({
+      offer: {
+        ...makeSnapshot().offer!,
+        status: "NEED_MORE_INFORMATION",
+      },
+      needInfo: {
+        blockerId: "00000000-0000-4000-8000-000000000090",
+        version: 2,
+        category: "commercial.need_more_information",
+        customerVisibleQuestion: "When can you launch?",
+        state: "OPEN",
+      },
+    });
+
+    render(
+      <CommercialProposalPanel
+        projectId={projectId}
+        initialSnapshot={needInfoSnapshot}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Your response/i), {
+      target: { value: "  Next March  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send response/i }));
+    await waitFor(() => expect(respondCommercialNeedInfoAction).toHaveBeenCalledTimes(1));
+    expect(respondCommercialNeedInfoAction.mock.calls[0]![1].responseText).toBe(
+      "Next March",
+    );
+    const firstOp = respondCommercialNeedInfoAction.mock.calls[0]![1].operationId;
+    const firstCorrelation =
+      respondCommercialNeedInfoAction.mock.calls[0]![1].correlationId;
+
+    fireEvent.change(screen.getByLabelText(/Your response/i), {
+      target: { value: "Next March" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send response/i }));
+    await waitFor(() => expect(respondCommercialNeedInfoAction).toHaveBeenCalledTimes(2));
+    expect(respondCommercialNeedInfoAction.mock.calls[1]![1].operationId).toBe(firstOp);
+    expect(respondCommercialNeedInfoAction.mock.calls[1]![1].correlationId).toBe(
+      firstCorrelation,
+    );
+    expect(respondCommercialNeedInfoAction.mock.calls[1]![1].responseText).toBe(
+      "Next March",
+    );
+
+    fireEvent.change(screen.getByLabelText(/Your response/i), {
+      target: { value: "Next  March" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send response/i }));
+    await waitFor(() => expect(respondCommercialNeedInfoAction).toHaveBeenCalledTimes(3));
+    expect(respondCommercialNeedInfoAction.mock.calls[2]![1].responseText).toBe(
+      "Next  March",
+    );
+    expect(respondCommercialNeedInfoAction.mock.calls[2]![1].operationId).not.toBe(
+      firstOp,
+    );
+    expect(
+      respondCommercialNeedInfoAction.mock.calls[2]![1].correlationId,
+    ).not.toBe(firstCorrelation);
+  });
+
+  it("clears need-info draft when reload returns a different blocker", async () => {
+    const blockerA = {
+      blockerId: "00000000-0000-4000-8000-000000000090",
+      version: 2,
+      category: "commercial.need_more_information" as const,
+      customerVisibleQuestion: "Question A?",
+      state: "OPEN",
+    };
+    const blockerB = {
+      blockerId: "00000000-0000-4000-8000-000000000091",
+      version: 1,
+      category: "commercial.need_more_information" as const,
+      customerVisibleQuestion: "Question B?",
+      state: "OPEN",
+    };
+
+    reloadCommercialSnapshotAction.mockResolvedValue({
+      ok: true,
+      replayed: false,
+      snapshot: makeSnapshot({
+        offer: {
+          ...makeSnapshot().offer!,
+          status: "NEED_MORE_INFORMATION",
+        },
+        needInfo: blockerB,
+        versionMismatch: false,
+      }),
+    });
+
+    render(
+      <CommercialProposalPanel
+        projectId={projectId}
+        initialSnapshot={makeSnapshot({
+          offer: {
+            ...makeSnapshot().offer!,
+            status: "NEED_MORE_INFORMATION",
+          },
+          needInfo: blockerA,
+          versionMismatch: true,
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Your response/i), {
+      target: { value: "Answer for A" },
+    });
+    expect(screen.getByDisplayValue("Answer for A")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Reload latest proposal/i }));
+    await waitFor(() => {
+      expect(screen.getByText("Question B?")).toBeInTheDocument();
+    });
+    expect(screen.queryByDisplayValue("Answer for A")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Your response/i)).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: /Send response/i }),
+    ).toBeDisabled();
+  });
 });
