@@ -4,9 +4,11 @@ import { buildSignInPath } from "@/lib/auth/safe-return-path";
 import {
   mapFactoryCategoryToUserMessage,
   type AssembleWebsitePlanRequest,
+  type CommercialOfferProjection,
   type ConfirmWebsitePlanRequest,
   type FactoryErrorCategory,
   type ProjectResumeDetail,
+  type QuoteProjection,
   type ReviseWebsitePlanRequest,
   type WebsitePlanProjection,
   type WebsitePlanRevision,
@@ -40,6 +42,8 @@ export type WebsitePlanMutationResult =
       plan: WebsitePlanProjection;
       replayed: boolean;
       requiredAction?: string;
+      quote?: QuoteProjection | null;
+      offer?: CommercialOfferProjection | null;
     }
   | {
       ok: false;
@@ -218,5 +222,7 @@ export async function confirmWebsitePlanAction(
     plan: result.data.plan,
     replayed: result.data.replayed,
     requiredAction: result.data.requiredAction,
+    quote: result.data.quote,
+    offer: result.data.offer,
   };
 }

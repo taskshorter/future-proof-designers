@@ -98,6 +98,49 @@ describe("B3-P1 website plan contract schemas", () => {
     expect(confirm.requiredAction).toBe("SYSTEM");
     expect(confirm.quote).toBeNull();
     expect(confirm.offer).toBeNull();
+
+    const withCommercial = confirmWebsitePlanSuccessSchema.parse({
+      ok: true,
+      replayed: false,
+      plan: { ...planFixture, confirmed: true },
+      requiredAction: "SYSTEM",
+      quote: {
+        projectId: planFixture.projectId,
+        quoteId: "00000000-0000-4000-8000-000000000080",
+        quoteVersion: 1,
+        quoteVersionId: "00000000-0000-4000-8000-000000000081",
+        planVersionId: planFixture.planVersionId,
+        currency: "USD",
+        lines: [
+          { kind: "ONE_TIME", label: "Website build", minorUnits: 250000, interval: null },
+        ],
+        oneTimeTotalMinor: 250000,
+        recurringMonthlyMinor: 0,
+        depositMinor: 125000,
+        remainingMinor: 125000,
+        taxStatement: "Taxes may apply.",
+        customerRationale: "Scoped to your Website Plan.",
+      },
+      offer: {
+        projectId: planFixture.projectId,
+        offerId: "00000000-0000-4000-8000-000000000082",
+        offerVersion: 1,
+        offerVersionId: "00000000-0000-4000-8000-000000000083",
+        planVersionId: planFixture.planVersionId,
+        quoteVersionId: "00000000-0000-4000-8000-000000000081",
+        status: "AWAITING_OWNER",
+        customerPlanConfirmed: true,
+        customerOfferReapproved: false,
+        ownerApproved: false,
+        ownerRejected: false,
+        depositReady: false,
+      },
+    });
+    expect(withCommercial.quote?.depositMinor).toBe(125000);
+    expect(withCommercial.offer?.status).toBe("AWAITING_OWNER");
+    expect(
+      Object.prototype.hasOwnProperty.call(withCommercial.quote ?? {}, "pricingConfigurationId"),
+    ).toBe(false);
   });
 
   it("bounds requiredAction and rejects malformed values", () => {

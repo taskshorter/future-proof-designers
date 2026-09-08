@@ -16,14 +16,23 @@ describe("sanitizeInternalReturnPath", () => {
     expect(sanitizeInternalReturnPath("/portal/projects/abc/onboarding")).toBe(
       "/portal/projects/abc/onboarding",
     );
+    expect(sanitizeInternalReturnPath("/portal/projects/abc/plan")).toBe(
+      "/portal/projects/abc/plan",
+    );
+    expect(sanitizeInternalReturnPath("/portal/projects/abc/commercial")).toBe(
+      "/portal/projects/abc/commercial",
+    );
     expect(
       sanitizeInternalReturnPath("/portal/projects/abc/onboarding?step=brand"),
     ).toBe("/portal/projects/abc/onboarding?step=brand");
     expect(sanitizeInternalReturnPath("/start?step=review")).toBe("/start?step=review");
   });
 
-  it("rejects nested attacker-controlled portal paths beyond onboarding", () => {
+  it("rejects nested attacker-controlled portal paths beyond allowed project routes", () => {
     expect(sanitizeInternalReturnPath("/portal/projects/abc/onboarding/extra")).toBe(
+      DEFAULT_RETURN_PATH,
+    );
+    expect(sanitizeInternalReturnPath("/portal/projects/abc/commercial/extra")).toBe(
       DEFAULT_RETURN_PATH,
     );
     expect(sanitizeInternalReturnPath("/portal/projects/abc/settings")).toBe(

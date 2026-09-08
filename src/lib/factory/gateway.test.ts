@@ -1518,6 +1518,8 @@ describe("B3-P1 website plan gateway methods", () => {
           replayed: false,
           plan: { ...websitePlanFixture, confirmed: true },
           requiredAction: "SYSTEM",
+          quote: null,
+          offer: null,
         }),
         { status: 200 },
       ),
@@ -1572,5 +1574,173 @@ describe("B3-P1 website plan gateway methods", () => {
     );
     expect(bad.ok).toBe(false);
     if (!bad.ok) expect(bad.category).toBe("internal_error");
+  });
+});
+
+describe("B3-P2 commercial gateway methods", () => {
+  const projectId = "00000000-0000-4000-8000-000000000013";
+  const depsBase = {
+    getAccessToken: async () => "access-token",
+    getGatewayBaseUrl: () => "http://127.0.0.1:3001",
+  };
+  const quoteFixture = {
+    projectId,
+    quoteId: "00000000-0000-4000-8000-000000000080",
+    quoteVersion: 1,
+    quoteVersionId: "00000000-0000-4000-8000-000000000081",
+    planVersionId: websitePlanFixture.planVersionId,
+    currency: "USD",
+    lines: [
+      {
+        kind: "ONE_TIME",
+        label: "Website build",
+        minorUnits: 250000,
+        interval: null,
+      },
+    ],
+    oneTimeTotalMinor: 250000,
+    recurringMonthlyMinor: 0,
+    depositMinor: 125000,
+    remainingMinor: 125000,
+    taxStatement: "Taxes may apply.",
+    customerRationale: "Scoped to your Website Plan.",
+  };
+
+  const offerFixture = {
+    projectId,
+    offerId: "00000000-0000-4000-8000-000000000082",
+    offerVersion: 1,
+    offerVersionId: "00000000-0000-4000-8000-000000000083",
+    planVersionId: websitePlanFixture.planVersionId,
+    quoteVersionId: quoteFixture.quoteVersionId,
+    status: "AWAITING_OWNER",
+    customerPlanConfirmed: true,
+    customerOfferReapproved: false,
+    ownerApproved: false,
+    ownerRejected: false,
+    depositReady: false,
+  };
+
+  it("GETs quote and commercial-offer with exact paths", async () => {
+    const { getProjectQuote, getCommercialOffer } = await import("./gateway");
+    const quoteFetch = mockFetch(
+      new Response(JSON.stringify({ ok: true, quote: quoteFixture }), {
+        status: 200,
+      }),
+    );
+    const quoteResult = await getProjectQuote(projectId, {
+      ...depsBase,
+      fetchImpl: quoteFetch,
+    });
+    expect(quoteResult.ok).toBe(true);
+    expect((quoteFetch.mock.calls[0] as [string])[0]).toBe(
+      `http://127.0.0.1:3001/api/v1/projects/${projectId}/quote`,
+    );
+
+    const offerFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          offer: offerFixture,
+          needInfo: null,
+          consultationRequired: false,
+          decline: null,
+        }),
+        { status: 200 },
+      ),
+    );
+    const offerResult = await getCommercialOffer(projectId, {
+      ...depsBase,
+      fetchImpl: offerFetch,
+    });
+    expect(offerResult.ok).toBe(true);
+    expect((offerFetch.mock.calls[0] as [string])[0]).toContain(
+      "/commercial-offer",
+    );
+    expect(
+      (offerFetch.mock.calls[0] as [string, RequestInit])[1].headers,
+    ).toMatchObject({
+      Authorization: "Bearer access-token",
+    });
+  });
+
+  it("POSTs reapprove and need-info respond with exact bodies", async () => {
+    const { reapproveCommercialOffer, respondCommercialNeedInfo } =
+      await import("./gateway");
+    const reapproveFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          offer: { ...offerFixture, status: "AWAITING_OWNER" },
+          requiredAction: "OWNER",
+        }),
+        { status: 200 },
+      ),
+    );
+    await reapproveCommercialOffer(
+      projectId,
+      offerFixture.offerVersionId,
+      {
+        operationId: "00000000-0000-4000-8000-000000000110",
+        correlationId: "00000000-0000-4000-8000-000000000111",
+        expectedOfferVersion: 1,
+      },
+      { ...depsBase, fetchImpl: reapproveFetch },
+    );
+    const [reapproveUrl, reapproveInit] = reapproveFetch.mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(reapproveUrl).toContain(
+      `/commercial-offer/${offerFixture.offerVersionId}/reapprove`,
+    );
+    expect(JSON.parse(String(reapproveInit.body))).toEqual({
+      operationId: "00000000-0000-4000-8000-000000000110",
+      correlationId: "00000000-0000-4000-8000-000000000111",
+      expectedOfferVersion: 1,
+    });
+
+    const respondFetch = mockFetch(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          replayed: false,
+          blocker: {
+            blockerId: "00000000-0000-4000-8000-000000000090",
+            version: 3,
+            category: "commercial.need_more_information",
+            customerVisibleQuestion: "When?",
+            state: "RESOLVED",
+          },
+          requiredAction: "OWNER",
+        }),
+        { status: 200 },
+      ),
+    );
+    await respondCommercialNeedInfo(
+      projectId,
+      "00000000-0000-4000-8000-000000000090",
+      {
+        operationId: "00000000-0000-4000-8000-000000000112",
+        correlationId: "00000000-0000-4000-8000-000000000113",
+        expectedBlockerVersion: 2,
+        responseText: "Next month",
+      },
+      { ...depsBase, fetchImpl: respondFetch },
+    );
+    const [respondUrl, respondInit] = respondFetch.mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(respondUrl).toContain(
+      "/commercial/need-info/00000000-0000-4000-8000-000000000090/respond",
+    );
+    expect(JSON.parse(String(respondInit.body))).toEqual({
+      operationId: "00000000-0000-4000-8000-000000000112",
+      correlationId: "00000000-0000-4000-8000-000000000113",
+      expectedBlockerVersion: 2,
+      responseText: "Next month",
+    });
   });
 });
