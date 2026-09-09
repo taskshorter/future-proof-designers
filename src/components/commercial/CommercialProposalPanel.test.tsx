@@ -48,6 +48,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("@/components/payment/DepositPaymentPanel", () => ({
+  DepositPaymentPanel: ({ projectId }: { projectId: string }) => (
+    <div data-testid="deposit-payment-panel">Payment panel for {projectId}</div>
+  ),
+}));
+
 import { CommercialProposalPanel } from "./CommercialProposalPanel";
 
 const projectId = "00000000-0000-4000-8000-000000000013";
@@ -386,6 +392,9 @@ describe("CommercialProposalPanel", () => {
     await waitFor(() => expect(reapproveCommercialOfferAction).toHaveBeenCalledTimes(1));
     await waitFor(() => {
       expect(screen.getByText(/Temporary failure/i)).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Approve revised proposal/i }),
+      ).toBeEnabled();
     });
     const firstOp = reapproveCommercialOfferAction.mock.calls[0]![1].operationId;
     fireEvent.click(
@@ -398,25 +407,20 @@ describe("CommercialProposalPanel", () => {
     });
   });
 
-  it("shows deposit-ready without payment controls", () => {
+  it("mounts payment panel even when offer is not deposit-ready", () => {
     render(
       <CommercialProposalPanel
         projectId={projectId}
         initialSnapshot={makeSnapshot({
           offer: {
             ...makeSnapshot().offer!,
-            status: "DEPOSIT_READY",
-            depositReady: true,
+            status: "AWAITING_OWNER",
+            depositReady: false,
           },
         })}
       />,
     );
-    expect(screen.getByText(/ready to start/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Deposit/i).length).toBeGreaterThan(0);
-    expect(
-      screen.queryByRole("button", { name: /pay|checkout|card/i }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/payment is available/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("deposit-payment-panel")).toBeInTheDocument();
   });
 
   it("shows owner-approved finalizing state without payment", () => {
@@ -619,11 +623,11 @@ describe("CommercialProposalPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Reload latest proposal/i }));
     await waitFor(() => {
       expect(screen.getByText("Question B?")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Send response/i }),
+      ).toBeDisabled();
     });
     expect(screen.queryByDisplayValue("Answer for A")).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Your response/i)).toHaveValue("");
-    expect(
-      screen.getByRole("button", { name: /Send response/i }),
-    ).toBeDisabled();
   });
 });

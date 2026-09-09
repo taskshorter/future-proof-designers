@@ -12,11 +12,11 @@ import {
 } from "@/lib/commercial/actions";
 import {
   DECLINE_NEUTRAL_MESSAGE,
-  DEPOSIT_READY_PAYMENT_NOTE,
   quoteLineAmountSuffix,
 } from "@/lib/commercial/labels";
 import { formatMinorUnitsOrFallback } from "@/lib/commercial/money";
 import type { QuoteProjection, WebsitePlanProjection } from "@/lib/factory/contract";
+import { DepositPaymentPanel } from "@/components/payment/DepositPaymentPanel";
 import {
   moduleInclusionLabel,
   moduleKeyLabel,
@@ -550,9 +550,16 @@ export function CommercialProposalPanel({
       {showDepositReady ? (
         <section className="panel">
           <h2>Your project is approved and ready to start</h2>
-          <p>{DEPOSIT_READY_PAYMENT_NOTE}</p>
+          <p>
+            Your production deposit amount is shown with pricing above when
+            available. Use the payment section below when Factory says payment is
+            ready.
+          </p>
         </section>
       ) : null}
+
+      {/* Payment availability is Factory-owned — not gated on offer.depositReady alone. */}
+      <DepositPaymentPanel projectId={projectId} />
 
       {showOwnerApproved ? (
         <section className="panel">

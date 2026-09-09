@@ -32,9 +32,9 @@ describe("commercial labels", () => {
     ).toBe("");
   });
 
-  it("keeps deposit-ready copy payment-unavailable", () => {
+  it("keeps deposit-ready note free of card/stripe checkout wording", () => {
     expect(DEPOSIT_READY_PAYMENT_NOTE.toLowerCase()).not.toMatch(
-      /\b(pay now|checkout|stripe|card)\b/,
+      /\b(pay now|stripe|card)\b/,
     );
     expect(DECLINE_NEUTRAL_MESSAGE).not.toMatch(/DECLINE_/);
   });

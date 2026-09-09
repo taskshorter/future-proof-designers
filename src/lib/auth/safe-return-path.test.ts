@@ -86,4 +86,56 @@ describe("sanitizeInternalReturnPath", () => {
       `/sign-in?next=${encodeURIComponent(DEFAULT_RETURN_PATH)}`,
     );
   });
+
+  it("accepts exact deposit return and cancel routes with safe query strings", () => {
+    expect(
+      sanitizeInternalReturnPath(
+        "/projects/00000000-0000-4000-8000-000000000013/deposit/return",
+      ),
+    ).toBe("/projects/00000000-0000-4000-8000-000000000013/deposit/return");
+    expect(
+      sanitizeInternalReturnPath(
+        "/projects/00000000-0000-4000-8000-000000000013/deposit/cancel",
+      ),
+    ).toBe("/projects/00000000-0000-4000-8000-000000000013/deposit/cancel");
+    expect(
+      sanitizeInternalReturnPath(
+        "/projects/00000000-0000-4000-8000-000000000013/deposit/return?attempt=00000000-0000-4000-8000-0000000000a1",
+      ),
+    ).toBe(
+      "/projects/00000000-0000-4000-8000-000000000013/deposit/return?attempt=00000000-0000-4000-8000-0000000000a1",
+    );
+  });
+
+  it("rejects unrelated /projects routes and external/protocol injection", () => {
+    expect(
+      sanitizeInternalReturnPath(
+        "/projects/00000000-0000-4000-8000-000000000013",
+      ),
+    ).toBe(DEFAULT_RETURN_PATH);
+    expect(
+      sanitizeInternalReturnPath(
+        "/projects/00000000-0000-4000-8000-000000000013/deposit",
+      ),
+    ).toBe(DEFAULT_RETURN_PATH);
+    expect(
+      sanitizeInternalReturnPath(
+        "/projects/00000000-0000-4000-8000-000000000013/deposit/return/extra",
+      ),
+    ).toBe(DEFAULT_RETURN_PATH);
+    expect(
+      sanitizeInternalReturnPath("https://checkout.stripe.com/c/pay/cs_test"),
+    ).toBe(DEFAULT_RETURN_PATH);
+    expect(sanitizeInternalReturnPath("http://evil.example/projects/x/deposit/return")).toBe(
+      DEFAULT_RETURN_PATH,
+    );
+    expect(sanitizeInternalReturnPath("//evil.example/projects/x/deposit/return")).toBe(
+      DEFAULT_RETURN_PATH,
+    );
+    expect(
+      sanitizeInternalReturnPath(
+        "/projects/abc/deposit/return\\@evil.example",
+      ),
+    ).toBe(DEFAULT_RETURN_PATH);
+  });
 });
