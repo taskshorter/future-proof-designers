@@ -463,6 +463,137 @@ button:focus-visible {
   margin-top: 1rem;
 }
 
+/* Public company pages */
+
+.page-wide {
+  display: grid;
+  gap: 3rem;
+}
+
+.hero {
+  display: grid;
+  gap: 1.1rem;
+  max-width: 48rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4.5vw, 3rem);
+  line-height: 1.15;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lead {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--muted);
+}
+
+.hero-panel {
+  margin-top: 0.5rem;
+}
+
+.content-section {
+  display: grid;
+  gap: 1rem;
+  max-width: 60rem;
+}
+
+.content-section h2,
+.prose-section h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.content-section p,
+.prose-section p {
+  margin: 0;
+}
+
+.card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1.15rem 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.card p {
+  margin: 0;
+}
+
+.prose-section {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.prose-section ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.preserve-lines {
+  white-space: pre-line;
+}
+
+.footer-grid {
+  display: grid;
+  gap: 1.5rem 2rem;
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+}
+
+.footer-identity p,
+.footer-legal p {
+  margin: 0 0 0.35rem;
+}
+
+.footer-nav-title {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+
+.footer-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.footer-legal {
+  padding-top: 0;
+}
+
+@media (max-width: 40rem) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 40rem) {
   .repeatable-row {
     grid-template-columns: 1fr;
