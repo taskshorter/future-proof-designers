@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <div className="page-stack">
+    <div className="page-stack with-kicker">
       <h1>Terms of Service</h1>
       <p>
         These terms describe the basis on which you may use the{" "}

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
-    <div className="page-stack">
+    <div className="page-stack with-kicker">
       <h1>About</h1>
       <p>
         FPDesigner builds custom websites for businesses through a clear,

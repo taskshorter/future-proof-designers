@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function CancellationPolicyPage() {
   return (
-    <div className="page-stack">
+    <div className="page-stack with-kicker">
       <h1>Cancellation Policy</h1>
       <p>
         This policy applies to projects provided by {siteConfig.legalName}{" "}

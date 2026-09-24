@@ -5,9 +5,24 @@
   --ink: #1c1c1a;
   --muted: #5c5c57;
   --border: #d9d9d3;
-  --focus: #1c1c1a;
   --header-bg: #1c1c1a;
   --header-ink: #f7f7f5;
+
+  /*
+   * Accent: sparing emphasis only (wayfinding, focus, badges) — never a
+   * primary-button fill. A warm umber/bronze, drawn from the same warm-neutral
+   * family as --bg/--ink/--border, rather than an unrelated cool "SaaS blue."
+   */
+  --accent: #7a4f26;
+  --accent-soft: #f2e9dc;
+  --focus: var(--accent);
+
+  --radius-sm: 0.35rem;
+  --radius-md: 0.6rem;
+  --radius-lg: 0.9rem;
+
+  --shadow-sm: 0 1px 2px rgba(28, 28, 26, 0.06), 0 1px 1px rgba(28, 28, 26, 0.04);
+  --shadow-md: 0 8px 24px rgba(28, 28, 26, 0.08), 0 2px 6px rgba(28, 28, 26, 0.05);
 }
 
 *,
@@ -27,11 +42,24 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family:
-    "Segoe UI",
-    system-ui,
     -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    system-ui,
+    Helvetica,
+    Arial,
     sans-serif;
-  line-height: 1.5;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 a {
@@ -39,9 +67,12 @@ a {
 }
 
 a:focus-visible,
-button:focus-visible {
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .app-shell {
@@ -54,12 +85,13 @@ button:focus-visible {
   position: absolute;
   left: 1rem;
   top: -3rem;
-  z-index: 20;
+  z-index: 30;
   background: var(--surface);
   color: var(--ink);
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 0.25rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .skip-link:focus {
@@ -67,46 +99,79 @@ button:focus-visible {
 }
 
 .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   background: var(--header-bg);
   color: var(--header-ink);
   border-bottom: 1px solid #2a2a27;
+  box-shadow: var(--shadow-sm);
 }
 
 .site-header-inner {
   max-width: 72rem;
   margin: 0 auto;
-  padding: 0.85rem 1.25rem;
+  padding: 0.95rem 1.25rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1.25rem;
   flex-wrap: wrap;
 }
 
+.nav-toggle {
+  display: none;
+  font: inherit;
+  background: transparent;
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 0.5rem 0.9rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+
+.nav-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .site-brand {
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 1.1rem;
   text-decoration: none;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 
 .site-nav-list {
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.85rem 1.1rem;
+  gap: 0.15rem;
   margin: 0;
   padding: 0;
 }
 
 .site-nav-list a {
+  display: inline-block;
   text-decoration: none;
-  opacity: 0.9;
+  opacity: 0.82;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.94rem;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.site-nav-list a:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .site-nav-list a[aria-current="page"] {
-  text-decoration: underline;
-  text-underline-offset: 0.25rem;
   opacity: 1;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .site-main {
@@ -114,7 +179,7 @@ button:focus-visible {
   width: 100%;
   max-width: 72rem;
   margin: 0 auto;
-  padding: 2rem 1.25rem 3rem;
+  padding: 2.75rem 1.25rem 4rem;
 }
 
 .site-footer {
@@ -125,19 +190,41 @@ button:focus-visible {
 .site-footer-inner {
   max-width: 72rem;
   margin: 0 auto;
-  padding: 1.25rem;
+  padding: 2.5rem 1.25rem;
 }
 
 .page-stack {
   display: grid;
-  gap: 1rem;
-  max-width: 42rem;
+  gap: 1.1rem;
+  max-width: 40rem;
 }
 
 .page-stack h1 {
   margin: 0;
-  font-size: clamp(1.75rem, 3vw, 2.25rem);
-  line-height: 1.2;
+  font-size: clamp(1.85rem, 3vw, 2.35rem);
+  line-height: 1.18;
+}
+
+/*
+ * Kicker underline is a Persuade/Read (public marketing + policy) heading
+ * treatment only — applied via an explicit modifier so utility/Operate pages
+ * (start, sign-in, sign-up, error, not-found) keep a plain heading rather than
+ * inheriting marketing chrome.
+ */
+.page-stack.with-kicker h1 {
+  position: relative;
+  padding-bottom: 0.85rem;
+}
+
+.page-stack.with-kicker h1::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 3rem;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
 }
 
 .page-stack p {
@@ -151,8 +238,9 @@ button:focus-visible {
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 1.25rem 1.35rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 1.35rem 1.5rem;
   display: grid;
   gap: 1rem;
 }
@@ -170,16 +258,36 @@ button:focus-visible {
   border: 1px solid var(--ink);
   background: var(--ink);
   color: var(--header-ink);
-  border-radius: 0.35rem;
-  padding: 0.45rem 0.8rem;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.95rem;
   text-decoration: none;
   cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.error-actions a:hover,
+.error-actions button:hover {
+  background: color-mix(in srgb, var(--ink) 88%, black);
+  border-color: color-mix(in srgb, var(--ink) 88%, black);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .error-actions a.secondary,
 .error-actions button.secondary {
   background: transparent;
   color: var(--ink);
+  border-color: var(--border);
+}
+
+.error-actions a.secondary:hover,
+.error-actions button.secondary:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .page-stack.narrow {
@@ -202,6 +310,18 @@ button:focus-visible {
   text-decoration: none;
 }
 
+.site-header-actions a,
+.text-button {
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  transition: background-color 0.15s ease;
+}
+
+.site-header-actions a:hover,
+.text-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .button-link,
 .auth-form button,
 .discovery-flow button,
@@ -209,9 +329,34 @@ button:focus-visible {
   border: 1px solid var(--ink);
   background: var(--ink);
   color: var(--header-ink);
-  border-radius: 0.35rem;
-  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-md);
+  padding: 0.55rem 1rem;
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.button-link:hover,
+.auth-form button:hover,
+.discovery-flow button:hover,
+.panel button:hover {
+  background: color-mix(in srgb, var(--ink) 88%, black);
+  border-color: color-mix(in srgb, var(--ink) 88%, black);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.button-link:disabled,
+.auth-form button:disabled,
+.discovery-flow button:disabled,
+.panel button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .button-link.secondary,
@@ -219,16 +364,29 @@ button:focus-visible {
 .panel button.secondary {
   background: transparent;
   color: var(--ink);
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.button-link.secondary:hover,
+.discovery-flow button.secondary:hover,
+.panel button.secondary:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .choice-row button {
   background: transparent;
   color: var(--ink);
+  border-color: var(--border);
   min-width: 5.5rem;
+  box-shadow: none;
 }
 
 .choice-row button.active {
   background: var(--ink);
+  border-color: var(--ink);
   color: var(--header-ink);
 }
 
@@ -254,8 +412,18 @@ button:focus-visible {
 .panel input,
 .panel textarea {
   border: 1px solid var(--border);
-  border-radius: 0.35rem;
-  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.65rem;
+  background: var(--surface);
+  transition: border-color 0.15s ease;
+}
+
+.auth-form input:focus-visible,
+.discovery-flow input:focus-visible,
+.discovery-flow textarea:focus-visible,
+.panel input:focus-visible,
+.panel textarea:focus-visible {
+  border-color: var(--accent);
 }
 
 .form-error {
@@ -467,33 +635,55 @@ button:focus-visible {
 
 .page-wide {
   display: grid;
-  gap: 3rem;
+  gap: 4.5rem;
 }
 
 .hero {
+  position: relative;
   display: grid;
-  gap: 1.1rem;
+  gap: 1.25rem;
   max-width: 48rem;
+  padding-block: 0.5rem 0.5rem;
+  background:
+    radial-gradient(
+      circle at 12% -20%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 92% -10%,
+      color-mix(in srgb, var(--accent) 9%, transparent),
+      transparent 50%
+    );
+  background-repeat: no-repeat;
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(2rem, 4.5vw, 3rem);
-  line-height: 1.15;
+  font-size: clamp(2.1rem, 4.5vw, 3.1rem);
+  line-height: 1.12;
 }
 
 .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
   margin: 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
 }
 
 .lead {
   margin: 0;
+  max-width: 42rem;
   font-size: 1.15rem;
+  line-height: 1.55;
   color: var(--muted);
 }
 
@@ -503,14 +693,14 @@ button:focus-visible {
 
 .content-section {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
   max-width: 60rem;
 }
 
 .content-section h2,
 .prose-section h2 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.45rem;
   line-height: 1.25;
 }
 
@@ -519,25 +709,34 @@ button:focus-visible {
   margin: 0;
 }
 
+.prose-section p {
+  line-height: 1.65;
+}
+
 .card-grid {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
 }
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 1.15rem 1.25rem;
+  border-radius: var(--radius-lg);
+  padding: 1.35rem 1.4rem;
   display: grid;
-  gap: 0.5rem;
+  gap: 0.6rem;
   align-content: start;
+  transition: border-color 0.15s ease;
+}
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--border));
 }
 
 .card h3 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
 }
 
 .card p {
@@ -546,7 +745,7 @@ button:focus-visible {
 
 .prose-section {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.7rem;
 }
 
 .prose-section ul {
@@ -560,20 +759,46 @@ button:focus-visible {
   white-space: pre-line;
 }
 
+.step-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.step-card {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
 .footer-grid {
   display: grid;
-  gap: 1.5rem 2rem;
+  gap: 1.75rem 2.5rem;
   grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
 }
 
 .footer-identity p,
 .footer-legal p {
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.4rem;
 }
 
 .footer-nav-title {
-  margin: 0 0 0.5rem;
-  font-weight: 600;
+  margin: 0 0 0.65rem;
+  font-weight: 700;
+  font-size: 0.9rem;
 }
 
 .footer-nav ul {
@@ -581,16 +806,58 @@ button:focus-visible {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.35rem;
+  gap: 0.5rem;
+}
+
+.footer-nav a {
+  text-decoration: none;
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+
+.footer-nav a:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 .footer-legal {
-  padding-top: 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
 }
 
 @media (max-width: 40rem) {
   .footer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .site-main {
+    padding-top: 2rem;
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .site-nav-list {
+    display: none;
+    width: 100%;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-top: 0.25rem;
+  }
+
+  .site-nav-list.is-open {
+    display: flex;
+  }
+
+  .site-nav-list a {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+  }
+
+  .site-header-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -599,4 +866,3 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 }
-

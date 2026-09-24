@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="page-stack">
+    <div className="page-stack with-kicker">
       <h1>Privacy Policy</h1>
       <p>
         This policy explains the categories of information handled when you use
