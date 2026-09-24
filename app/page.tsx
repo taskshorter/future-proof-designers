@@ -17,6 +17,25 @@ const services = [
   },
 ] as const;
 
+const steps = [
+  {
+    title: "Start",
+    body: "Answer three short guided discovery questions about your business.",
+  },
+  {
+    title: "Review your plan",
+    body: "Your answers inform a website plan for your project, which you review.",
+  },
+  {
+    title: "Approve your proposal",
+    body: "Scope, cost and any deposit are presented to you in a proposal before work is billed.",
+  },
+  {
+    title: "We build it",
+    body: "Your custom website or application is built for your business under the terms you agreed to.",
+  },
+] as const;
+
 export default function HomePage() {
   return (
     <div className="page-wide">
@@ -61,15 +80,28 @@ export default function HomePage() {
         </p>
       </section>
 
+      <section className="content-section" aria-labelledby="process-heading">
+        <h2 id="process-heading">What working with us looks like</h2>
+        <div className="step-grid">
+          {steps.map((step, index) => (
+            <div key={step.title} className="step-card">
+              <span className="step-number" aria-hidden="true">
+                {index + 1}
+              </span>
+              <h3>{step.title}</h3>
+              <p className="muted">{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="content-section" aria-labelledby="products-heading">
         <h2 id="products-heading">Our software products</h2>
-        <article className="card">
-          <h3>BookLocal</h3>
-          <p className="muted">{siteConfig.bookLocalStatement}</p>
-          <p>
-            <Link href="/products">About BookLocal</Link>
-          </p>
-        </article>
+        <h3>BookLocal</h3>
+        <p className="muted">{siteConfig.bookLocalStatement}</p>
+        <p>
+          <Link href="/products">About BookLocal</Link>
+        </p>
       </section>
 
       <section className="content-section" aria-labelledby="company-heading">

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function ProductsPage() {
   return (
-    <div className="page-stack">
+    <div className="page-stack with-kicker">
       <h1>Products</h1>
       <p>
         In addition to custom project work, {siteConfig.legalName} develops

@@ -17,7 +17,7 @@ export default function ContactPage() {
   );
 
   return (
-    <div className="page-stack">
+    <div className="page-stack with-kicker">
       <h1>Contact</h1>
       <p>
         {siteConfig.name} is operated by {siteConfig.legalName}.

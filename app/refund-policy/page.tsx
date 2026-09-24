@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RefundPolicyPage() {
   return (
-    <div className="page-stack">
+    <div className="page-stack with-kicker">
       <h1>Refund &amp; Dispute Policy</h1>
       <p>
         This policy applies to services provided by {siteConfig.legalName}{" "}
